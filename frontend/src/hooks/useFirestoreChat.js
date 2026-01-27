@@ -35,6 +35,7 @@ export const useFirestoreChat = ({
   firebaseConfig,
   apiBase,
   apiKey,
+  adminSecret,
   model,
   enabled = true,
 }) => {
@@ -265,6 +266,7 @@ export const useFirestoreChat = ({
       const result = await sendChat({
         baseUrl: apiBase,
         apiKey,
+        adminSecret,
         model,
         messages: nextMessages,
       });
@@ -334,6 +336,7 @@ export const useFirestoreChat = ({
       const result = await generateImage({
         baseUrl: apiBase,
         apiKey,
+        adminSecret,
         prompt: trimmed,
         negativePrompt: options?.negativePrompt,
         width: options?.width,

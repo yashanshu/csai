@@ -17,6 +17,7 @@ const AdminView = ({
   error,
   output,
   defaultModel,
+  adminSecretLocked,
   adminStatus,
   adminTone,
   adminError,
@@ -75,13 +76,19 @@ const AdminView = ({
             <div className="label">
               <span className="label-text">Admin Secret</span>
             </div>
-            <input
-              type="password"
-              value={settings.adminSecret}
-              onChange={(event) => updateSetting("adminSecret", event.target.value)}
-              placeholder="Admin-Secret header"
-              className="input input-bordered bg-base-100"
-            />
+            {adminSecretLocked ? (
+              <div className="rounded-box border border-base-200 bg-base-100 px-4 py-3 text-sm text-base-content/70">
+                Loaded from environment configuration.
+              </div>
+            ) : (
+              <input
+                type="password"
+                value={settings.adminSecret}
+                onChange={(event) => updateSetting("adminSecret", event.target.value)}
+                placeholder="Admin-Secret header"
+                className="input input-bordered bg-base-100"
+              />
+            )}
           </label>
           <label className="form-control w-full">
             <div className="label">

@@ -31,6 +31,7 @@ const parseBooleanEnv = (value, fallback) => {
 export const DEFAULT_API_BASE =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 export const PUBLIC_API_KEY = import.meta.env.VITE_PUBLIC_API_KEY || "";
+export const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "";
 export const DEFAULT_PROMPT = "One sentence please.";
 export const DEFAULT_MODEL = "llama3";
 export const SETTINGS_STORAGE_KEY = "ollama-relay-settings";

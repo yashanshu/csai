@@ -12,7 +12,9 @@ import AdminView from "./components/admin/AdminView.jsx";
 import PublicChatView from "./components/chat/PublicChatView.jsx";
 import UserChatView from "./components/chat/UserChatView.jsx";
 import AppHeader from "./components/layout/AppHeader.jsx";
+import PasswordGate from "./components/layout/PasswordGate.jsx";
 import {
+  ADMIN_PASSWORD,
   DEFAULT_API_BASE,
   DEFAULT_FIREBASE_CONFIG,
   DEFAULT_FIRESTORE_ENABLED,
@@ -39,7 +41,8 @@ const loadStoredSettings = () => {
     if (!parsed || typeof parsed !== "object") {
       return null;
     }
-    return parsed;
+    const { adminSecret: _ignored, ...rest } = parsed;
+    return rest;
   } catch {
     return null;
   }
@@ -53,6 +56,15 @@ const loadStoredView = () => {
   return stored === "admin" ? "admin" : "user";
 };
 
+const ADMIN_UNLOCK_STORAGE_KEY = "ollama-relay-admin-unlocked";
+
+const loadStoredAdminUnlock = () => {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.sessionStorage.getItem(ADMIN_UNLOCK_STORAGE_KEY) === "true";
+};
+
 const getRouteMode = () => {
   if (typeof window === "undefined") {
     return "studio";
@@ -64,6 +76,12 @@ const getRouteMode = () => {
 export default function App() {
   const [routeMode] = useState(getRouteMode);
   const [view, setView] = useState(loadStoredView);
+  const hasAdminPassword = ADMIN_PASSWORD.trim().length > 0;
+  const [adminUnlocked, setAdminUnlocked] = useState(() =>
+    hasAdminPassword ? loadStoredAdminUnlock() : true
+  );
+  const [adminPasswordInput, setAdminPasswordInput] = useState("");
+  const [adminGateError, setAdminGateError] = useState("");
   const [settings, setSettings] = useState(() => {
     const stored = loadStoredSettings();
     const storedFirebase =
@@ -77,7 +95,7 @@ export default function App() {
     return {
       apiBase: stored?.apiBase || DEFAULT_API_BASE,
       apiKey: stored?.apiKey || "",
-      adminSecret: stored?.adminSecret || "",
+      adminSecret: "",
       model: normalizeModelName(stored?.model || DEFAULT_MODEL),
       stream: typeof stored?.stream === "boolean" ? stored.stream : false,
       firestoreEnabled: inferredFirestoreEnabled,
@@ -111,13 +129,23 @@ export default function App() {
 
   const abortRef = useRef(null);
   const isPublicRoute = routeMode === "public";
+  const publicSettings = {
+    apiBase: DEFAULT_API_BASE,
+    apiKey: PUBLIC_API_KEY,
+    firebaseConfig: DEFAULT_FIREBASE_CONFIG,
+    firestoreEnabled: DEFAULT_FIRESTORE_ENABLED,
+  };
+  const activeSettings = isPublicRoute
+    ? { ...settings, ...publicSettings }
+    : settings;
 
   const chat = useFirestoreChat({
-    firebaseConfig: settings.firebaseConfig,
-    apiBase: settings.apiBase,
-    apiKey: settings.apiKey,
-    model: settings.model,
-    enabled: settings.firestoreEnabled,
+    firebaseConfig: activeSettings.firebaseConfig,
+    apiBase: activeSettings.apiBase,
+    apiKey: activeSettings.apiKey,
+    adminSecret: isPublicRoute ? "" : settings.adminSecret,
+    model: activeSettings.model,
+    enabled: activeSettings.firestoreEnabled,
   });
 
   useEffect(() => {
@@ -131,18 +159,37 @@ export default function App() {
     if (typeof window === "undefined") {
       return;
     }
-    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    const { adminSecret: _ignored, ...persisted } = settings;
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(persisted));
   }, [settings]);
 
   useEffect(() => {
-    if (!isPublicRoute) {
+    if (typeof window === "undefined") {
       return;
     }
-    if (!PUBLIC_API_KEY || settings.apiKey.trim()) {
+    window.sessionStorage.setItem(
+      ADMIN_UNLOCK_STORAGE_KEY,
+      adminUnlocked ? "true" : "false"
+    );
+  }, [adminUnlocked]);
+
+  useEffect(() => {
+    if (isPublicRoute || !hasAdminPassword) {
       return;
     }
-    setSettings((prev) => ({ ...prev, apiKey: PUBLIC_API_KEY }));
-  }, [isPublicRoute, settings.apiKey]);
+    if (adminUnlocked && settings.adminSecret !== ADMIN_PASSWORD) {
+      setSettings((prev) => ({ ...prev, adminSecret: ADMIN_PASSWORD }));
+      return;
+    }
+    if (!adminUnlocked && settings.adminSecret) {
+      setSettings((prev) => ({ ...prev, adminSecret: "" }));
+    }
+  }, [
+    adminUnlocked,
+    hasAdminPassword,
+    isPublicRoute,
+    settings.adminSecret,
+  ]);
 
   const payloadPreview = useMemo(
     () =>
@@ -166,7 +213,7 @@ export default function App() {
   const canSubmit =
     settings.apiKey.trim().length > 0 && prompt.trim().length > 0;
   const canChat =
-    settings.apiKey.trim().length > 0 &&
+    activeSettings.apiKey.trim().length > 0 &&
     chatInput.trim().length > 0 &&
     Boolean(chat.firestoreDb);
 
@@ -198,6 +245,7 @@ export default function App() {
       const result = await generateText({
         baseUrl: settings.apiBase,
         apiKey: settings.apiKey,
+        adminSecret: settings.adminSecret,
         model: settings.model,
         prompt,
         stream: settings.stream,
@@ -235,6 +283,32 @@ export default function App() {
     setError("");
     setStatus("Idle");
     setRequestId("");
+  };
+
+  const handleAdminPasswordChange = (value) => {
+    setAdminPasswordInput(value);
+    if (adminGateError) {
+      setAdminGateError("");
+    }
+  };
+
+  const handleUnlockAdmin = () => {
+    if (!hasAdminPassword) {
+      setAdminUnlocked(true);
+      setAdminGateError("");
+      return;
+    }
+    if (!adminPasswordInput.trim()) {
+      setAdminGateError("Password is required.");
+      return;
+    }
+    if (adminPasswordInput.trim() !== ADMIN_PASSWORD) {
+      setAdminGateError("Incorrect password.");
+      return;
+    }
+    setAdminUnlocked(true);
+    setAdminPasswordInput("");
+    setAdminGateError("");
   };
 
   const ensureAdminReady = () => {
@@ -486,6 +560,24 @@ export default function App() {
 
   const activeView = isPublicRoute ? "user" : view;
 
+  if (!isPublicRoute && hasAdminPassword && !adminUnlocked) {
+    return (
+      <div className="min-h-screen">
+        <div className="mx-auto max-w-6xl px-6 pb-16 pt-10">
+          <PasswordGate
+            title="Private console"
+            subtitle="Enter the admin password to access the studio."
+            password={adminPasswordInput}
+            onPasswordChange={handleAdminPasswordChange}
+            onSubmit={handleUnlockAdmin}
+            error={adminGateError}
+            hasPassword={hasAdminPassword}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen">
       <div className="mx-auto max-w-6xl px-6 pb-16 pt-10">
@@ -494,7 +586,10 @@ export default function App() {
         )}
 
         {isPublicRoute ? (
-          <PublicChatView chatPanelProps={chatPanelProps} />
+          <PublicChatView
+            chatPanelProps={chatPanelProps}
+            chatSidebarProps={chatSidebarProps}
+          />
         ) : activeView === "user" ? (
           <UserChatView
             settings={settings}
@@ -521,6 +616,7 @@ export default function App() {
             error={error}
             output={output}
             defaultModel={DEFAULT_MODEL}
+            adminSecretLocked={hasAdminPassword}
             adminStatus={adminStatus}
             adminTone={adminTone}
             adminError={adminError}

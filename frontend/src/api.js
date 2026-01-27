@@ -53,6 +53,7 @@ async function adminRequest({
 export async function generateText({
   baseUrl,
   apiKey,
+  adminSecret,
   model,
   prompt,
   stream,
@@ -67,6 +68,9 @@ export async function generateText({
   const headers = { "Content-Type": "application/json" };
   if (apiKey) {
     headers["X-API-Key"] = apiKey;
+  }
+  if (adminSecret) {
+    headers["Admin-Secret"] = adminSecret;
   }
 
   const response = await fetch(url, {
@@ -149,6 +153,7 @@ export async function generateText({
 export async function sendChat({
   baseUrl,
   apiKey,
+  adminSecret,
   model,
   messages,
   signal,
@@ -159,6 +164,9 @@ export async function sendChat({
   const headers = { "Content-Type": "application/json" };
   if (apiKey) {
     headers["X-API-Key"] = apiKey;
+  }
+  if (adminSecret) {
+    headers["Admin-Secret"] = adminSecret;
   }
 
   const response = await fetch(url, {
@@ -180,6 +188,7 @@ export async function sendChat({
 export async function generateImage({
   baseUrl,
   apiKey,
+  adminSecret,
   prompt,
   negativePrompt,
   width,
@@ -194,6 +203,9 @@ export async function generateImage({
   const headers = { "Content-Type": "application/json" };
   if (apiKey) {
     headers["X-API-Key"] = apiKey;
+  }
+  if (adminSecret) {
+    headers["Admin-Secret"] = adminSecret;
   }
 
   const response = await fetch(url, {

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, test, vi } from "vitest";
 
 import App from "./App.jsx";
+import { ADMIN_PASSWORD } from "./config/appConfig.js";
 
 const mockUseFirestoreChat = vi.fn();
 
@@ -23,6 +24,7 @@ const mockFetch = (payload) =>
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   mockUseFirestoreChat.mockReset();
 });
 
@@ -30,6 +32,18 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
+
+const unlockIfNeeded = async (user) => {
+  if (!ADMIN_PASSWORD) {
+    return;
+  }
+  const passwordInput = screen.queryByLabelText("Password");
+  if (!passwordInput) {
+    return;
+  }
+  await user.type(passwordInput, ADMIN_PASSWORD);
+  await user.click(screen.getByRole("button", { name: "Unlock" }));
+};
 
 test("switches from user chat to admin view", async () => {
   mockUseFirestoreChat.mockReturnValue({
@@ -52,9 +66,10 @@ test("switches from user chat to admin view", async () => {
 
   render(<App />);
 
-  expect(screen.getByText("Conversations")).toBeInTheDocument();
-
   const user = userEvent.setup();
+  await unlockIfNeeded(user);
+
+  expect(screen.getByText("Conversations")).toBeInTheDocument();
   await user.click(screen.getAllByRole("button", { name: "Admin" })[0]);
 
   expect(screen.getByText("Admin settings")).toBeInTheDocument();
@@ -114,6 +129,7 @@ test("generate key calls admin endpoint and shows result", async () => {
   render(<App />);
 
   const user = userEvent.setup();
+  await unlockIfNeeded(user);
   await user.click(screen.getAllByRole("button", { name: "Admin" })[0]);
 
   await user.type(
@@ -157,6 +173,7 @@ test("sends chat content through chat hook", async () => {
   render(<App />);
 
   const user = userEvent.setup();
+  await unlockIfNeeded(user);
   await user.type(screen.getByLabelText("API Key"), "user-key");
   await user.type(screen.getByLabelText("Your message"), "Hi assistant");
 
@@ -189,6 +206,7 @@ test("image mode sends image request", async () => {
   render(<App />);
 
   const user = userEvent.setup();
+  await unlockIfNeeded(user);
   await user.type(screen.getByLabelText("API Key"), "user-key");
   await user.click(screen.getByRole("button", { name: "Image" }));
   await user.type(screen.getByLabelText("Describe the image"), "A neon skyline");
