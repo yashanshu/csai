@@ -1,17 +1,39 @@
 const parseFirebaseConfig = () => {
   const raw = import.meta.env.VITE_FIREBASE_CONFIG;
-  if (!raw) {
-    return {};
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") {
-      return parsed;
+  let parsed = {};
+  if (raw) {
+    try {
+      const nextParsed = JSON.parse(raw);
+      if (nextParsed && typeof nextParsed === "object") {
+        parsed = nextParsed;
+      }
+    } catch {
+      parsed = {};
     }
-  } catch {
-    return {};
   }
-  return {};
+
+  const envConfig = {};
+  const setIf = (key, value) => {
+    if (typeof value !== "string") {
+      return;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return;
+    }
+    envConfig[key] = trimmed;
+  };
+
+  setIf("apiKey", import.meta.env.VITE_FIREBASE_API_KEY);
+  setIf("authDomain", import.meta.env.VITE_FIREBASE_AUTH_DOMAIN);
+  setIf("projectId", import.meta.env.VITE_FIREBASE_PROJECT_ID);
+  setIf("storageBucket", import.meta.env.VITE_FIREBASE_STORAGE_BUCKET);
+  setIf("messagingSenderId", import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID);
+  setIf("appId", import.meta.env.VITE_FIREBASE_APP_ID);
+  setIf("measurementId", import.meta.env.VITE_FIREBASE_MEASUREMENT_ID);
+
+  const combined = { ...parsed, ...envConfig };
+  return Object.keys(combined).length ? combined : {};
 };
 
 const parseBooleanEnv = (value, fallback) => {
