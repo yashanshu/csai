@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    color: hsl(var(--bc));
+    background:
+      radial-gradient(900px 420px at 12% -10%, rgba(31, 122, 93, 0.2), transparent 60%),
+      radial-gradient(820px 360px at 85% 5%, rgba(212, 138, 93, 0.2), transparent 55%),
+      #f6f4f1;
+    min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
+  }
+
+  code,
+  pre,
+  .mono {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  }
+}
+
+@layer components {
+  .glass {
+    background: rgba(246, 244, 241, 0.78);
+    border: 1px solid rgba(31, 41, 51, 0.08);
+    box-shadow: 0 24px 60px rgba(31, 41, 51, 0.08);
+    backdrop-filter: blur(18px);
+  }
+}

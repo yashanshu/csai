@@ -1,0 +1,16 @@
+# .gcloudignore
+google-cloud-sdk/
+.git/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.log
+.DS_Store
+README.md
+deploy.sh
+deploy.ps1
+teardown.sh
+teardown.ps1
+frontend/
