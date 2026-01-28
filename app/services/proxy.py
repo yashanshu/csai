@@ -29,7 +29,11 @@ async def proxy_request(path: str, request: Request):
     else:
         url = httpx.URL(path=normalized_path, query=request.url.query.encode("utf-8"))
 
-    headers = {k: v for k, v in request.headers.items() if k.lower() != "x-response-format"}
+    headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in {"x-response-format", "origin", "referer"}
+    }
     headers.pop("host", None)
     headers.pop("content-length", None)
 

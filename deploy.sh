@@ -70,12 +70,14 @@ gcloud run deploy "$ServiceName" \
   --region "$RunRegion" \
   --platform managed \
   --allow-unauthenticated \
+  --execution-environment gen2 \
   --no-cpu-throttling \
   --cpu 8 \
   --memory 32Gi \
   --gpu 1 \
   --gpu-type nvidia-l4 \
-  --max-instances 3 \
+  --no-gpu-zonal-redundancy \
+  --max-instances 1 \
   --concurrency 100 \
   --timeout 3600 \
   --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET,DEFAULT_RATE_LIMIT_PER_MINUTE=$DEFAULT_RATE_LIMIT_PER_MINUTE,DEFAULT_QUOTA_PER_DAY=$DEFAULT_QUOTA_PER_DAY,MAX_BODY_BYTES=$MAX_BODY_BYTES,MODELS_CACHE_TTL_SECONDS=$MODELS_CACHE_TTL_SECONDS,IMAGE_API_URL=$IMAGE_API_URL,IMAGE_API_KEY=$IMAGE_API_KEY,IMAGE_API_KEY_HEADER=$IMAGE_API_KEY_HEADER,IMAGE_API_KEY_PREFIX=$IMAGE_API_KEY_PREFIX,IMAGE_TIMEOUT_SECONDS=$IMAGE_TIMEOUT_SECONDS"

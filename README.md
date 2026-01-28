@@ -6,18 +6,19 @@ This project deploys a serverless Llama 3 model using Ollama on Google Cloud Run
 
 1.  **Google Cloud Project**: You need an active GCP project.
 2.  **Billing Enabled**: GPU usage requires billing.
-3.  **Quotas**: Ensure you have quota for `NVIDIA L4 GPUs` in `us-central1`.
+3.  **Quotas**: Ensure you have quota for `NVIDIA L4 GPUs` in `asia-southeast1`.
     *   *Note: New projects often have 0 GPU quota. You may need to request an increase for "Committed L4 GPUs" or "Preemptible L4 GPUs" in the scaling area.*
 4.  **CLI Tools**: Installed `gcloud` CLI.
 
 ## Files
 
 *   `Dockerfile`: Bakes the `llama3` model into the container so there are no download times at startup.
-*   `deploy.ps1`: Automates the build and deploy process.
+*   `deploy.ps1` / `deploy.sh`: Automates the build + deploy process.
+*   `teardown.ps1` / `teardown.sh`: Cleans up the Cloud Run service and image.
 
 ## How to Deploy
 
-1.  **Open Terminal** (PowerShell or Command Prompt).
+1.  **Open Terminal** (PowerShell on Windows or bash on macOS/Linux).
 2.  **Login to Google Cloud**:
     ```powershell
     gcloud auth login
@@ -27,10 +28,20 @@ This project deploys a serverless Llama 3 model using Ollama on Google Cloud Run
     ```powershell
     ./deploy.ps1
     ```
+    ```bash
+    ./deploy.sh
+    ```
 
 ## Testing
 
 Once deployed, the script will output your Service URL (e.g., `https://ollama-llama3-xyz.run.app`).
+
+Generate an API key (use the admin secret printed by the deploy script):
+
+```bash
+curl -X POST https://YOUR_SERVICE_URL/admin/generate-key \
+  -H "Admin-Secret: YOUR_ADMIN_SECRET"
+```
 
 **Test using curl:**
 
@@ -39,7 +50,8 @@ curl -X POST https://YOUR_SERVICE_URL/api/generate -d '{
   "model": "llama3",
   "prompt": "Explain specific impulse in one sentence.",
   "stream": false
-}'
+}' \
+  -H "X-API-Key: YOUR_API_KEY"
 ```
 
 ## API Features
@@ -164,4 +176,8 @@ python -m pytest -q
 *   **Active**: ~$1.65/hour (only when processing requests).
 *   **Idle**: $0 (if scaled to 0).
 *   **Cold Start**: Approx 20-30 seconds for the first request after being idle.
+
+## Troubleshooting
+
+*   **403 from Ollama in server logs**: The proxy strips `Origin` and `Referer` on upstream calls so Ollama doesn't enforce browser CORS. If you still see 403s, ensure clients call the Cloud Run service URL (not `localhost:11434` directly).
 
