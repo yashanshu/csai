@@ -1,4 +1,5 @@
 import Card from "../ui/Card.jsx";
+import MarkdownRenderer from "../ui/MarkdownRenderer.jsx";
 import { FIREBASE_FIELDS } from "../../config/appConfig.js";
 
 const AdminView = ({
@@ -238,9 +239,13 @@ const AdminView = ({
             </div>
           ) : (
             <div className="rounded-box border border-base-200 bg-base-100 p-4">
-              <pre className="mono min-h-[280px] whitespace-pre-wrap text-sm">
-                {output || "Responses appear here once the request completes."}
-              </pre>
+              {output ? (
+                <MarkdownRenderer content={output} className="text-sm" />
+              ) : (
+                <p className="text-sm text-base-content/60">
+                  Responses appear here once the request completes.
+                </p>
+              )}
             </div>
           )}
 

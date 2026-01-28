@@ -1,4 +1,5 @@
 import Card from "../ui/Card.jsx";
+import MarkdownRenderer from "../ui/MarkdownRenderer.jsx";
 import { formatTimestamp } from "../../lib/chatUtils.js";
 
 const ChatPanel = ({
@@ -32,12 +33,15 @@ const ChatPanel = ({
             className="max-w-full rounded-2xl border border-base-200"
           />
           {message.content ? (
-            <p className="text-xs text-base-content/70">{message.content}</p>
+            <MarkdownRenderer
+              content={message.content}
+              className="text-xs text-base-content/70"
+            />
           ) : null}
         </div>
       );
     }
-    return message.content;
+    return <MarkdownRenderer content={message.content} />;
   };
 
   const renderStudioMessage = (message) => (
