@@ -69,10 +69,10 @@ test("switches from user chat to admin view", async () => {
   const user = userEvent.setup();
   await unlockIfNeeded(user);
 
-  expect(screen.getByText("Conversations")).toBeInTheDocument();
+  expect(screen.getByText("History")).toBeInTheDocument();
   await user.click(screen.getAllByRole("button", { name: "Admin" })[0]);
 
-  expect(screen.getByText("Admin settings")).toBeInTheDocument();
+  expect(screen.getByText("Admin Console")).toBeInTheDocument();
 });
 
 test("public chat route hides admin tabs", async () => {
@@ -98,7 +98,7 @@ test("public chat route hides admin tabs", async () => {
 
   render(<App />);
 
-  expect(screen.getByText("Public chat")).toBeInTheDocument();
+  expect(screen.getByText("CS AI Console")).toBeInTheDocument();
   expect(screen.queryByText("Admin")).not.toBeInTheDocument();
 
   window.history.pushState({}, "", "/");
@@ -132,10 +132,13 @@ test("generate key calls admin endpoint and shows result", async () => {
   await unlockIfNeeded(user);
   await user.click(screen.getAllByRole("button", { name: "Admin" })[0]);
 
-  await user.type(
-    screen.getByLabelText("Admin Secret"),
-    "super-secret"
-  );
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+  const adminSecretInput = screen.queryByLabelText("Admin Secret");
+  if (adminSecretInput) {
+    await user.type(adminSecretInput, "super-secret");
+  }
+
+  await user.click(screen.getByRole("button", { name: "API Keys" }));
 
   await user.click(screen.getByRole("button", { name: "Generate key" }));
 
@@ -146,7 +149,8 @@ test("generate key calls admin endpoint and shows result", async () => {
   const [url, options] = fetchSpy.mock.calls[0];
   expect(url.toString()).toContain("/admin/generate-key");
   expect(options.method).toBe("POST");
-  expect(options.headers["Admin-Secret"]).toBe("super-secret");
+  const expectedSecret = ADMIN_PASSWORD || "super-secret";
+  expect(options.headers["Admin-Secret"]).toBe(expectedSecret);
 });
 
 test("sends chat content through chat hook", async () => {
@@ -175,7 +179,7 @@ test("sends chat content through chat hook", async () => {
   const user = userEvent.setup();
   await unlockIfNeeded(user);
   await user.type(screen.getByLabelText("API Key"), "user-key");
-  await user.type(screen.getByLabelText("Your message"), "Hi assistant");
+  await user.type(screen.getByLabelText("Chat input"), "Hi assistant");
 
   await user.click(screen.getByRole("button", { name: "Send" }));
 
@@ -209,7 +213,7 @@ test("image mode sends image request", async () => {
   await unlockIfNeeded(user);
   await user.type(screen.getByLabelText("API Key"), "user-key");
   await user.click(screen.getByRole("button", { name: "Image" }));
-  await user.type(screen.getByLabelText("Describe the image"), "A neon skyline");
+  await user.type(screen.getByLabelText("Chat input"), "A neon skyline");
   await user.click(screen.getByRole("button", { name: "Send" }));
 
   expect(sendImage).toHaveBeenCalled();

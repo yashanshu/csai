@@ -3,13 +3,38 @@
 @tailwind utilities;
 
 @layer base {
+  :root[data-theme="relay"] {
+    --app-bg: radial-gradient(
+        900px 420px at 12% -10%,
+        rgba(31, 122, 93, 0.22),
+        transparent 60%
+      ),
+      radial-gradient(
+        820px 360px at 85% 5%,
+        rgba(212, 138, 93, 0.18),
+        transparent 55%
+      ),
+      #f6f4f1;
+  }
+
+  :root[data-theme="relay-dark"] {
+    --app-bg: radial-gradient(
+        820px 360px at 10% -10%,
+        rgba(110, 231, 183, 0.12),
+        transparent 60%
+      ),
+      radial-gradient(
+        760px 320px at 85% 5%,
+        rgba(125, 211, 252, 0.14),
+        transparent 55%
+      ),
+      #0b0f14;
+  }
+
   body {
     font-family: "Space Grotesk", system-ui, sans-serif;
     color: hsl(var(--bc));
-    background:
-      radial-gradient(900px 420px at 12% -10%, rgba(31, 122, 93, 0.2), transparent 60%),
-      radial-gradient(820px 360px at 85% 5%, rgba(212, 138, 93, 0.2), transparent 55%),
-      #f6f4f1;
+    background: var(--app-bg, #f6f4f1);
     min-height: 100vh;
   }
 

@@ -1,4 +1,3 @@
-import Card from "../ui/Card.jsx";
 import { formatTimestamp, truncateText } from "../../lib/chatUtils.js";
 
 const ChatSidebar = ({
@@ -10,116 +9,176 @@ const ChatSidebar = ({
   onSelectChat,
   onStartNewChat,
   hasFirestore,
-  variant = "studio",
+  collapsed = false,
+  onToggleCollapse,
+  searchTerm,
+  onSearchTermChange,
+  apiKey,
+  apiBase,
+  model,
+  onUpdateSetting,
+  isPublicRoute,
 }) => {
-  const content = (
-    <>
-      <div className="flex items-center justify-between">
-        <h2 className="card-title text-2xl">
-          {variant === "public" ? "History" : "Conversations"}
-        </h2>
-        <button
-          className="btn btn-sm btn-outline"
-          onClick={onStartNewChat}
-          type="button"
-        >
-          New chat
+  const filteredThreads = chatThreads.filter((thread) => {
+    if (!searchTerm) {
+      return true;
+    }
+    const needle = searchTerm.toLowerCase();
+    const title = (thread.title || "").toLowerCase();
+    const last = (thread.lastMessage || "").toLowerCase();
+    return title.includes(needle) || last.includes(needle);
+  });
+
+  return (
+    <aside
+      className={`flex h-full flex-col border-r border-base-200 bg-base-100/70 transition-all ${
+        collapsed ? "w-20" : "w-full md:w-80"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2 px-4 py-4">
+        {collapsed ? (
+          <span className="text-xs font-semibold uppercase tracking-[0.2em]">CS</span>
+        ) : (
+          <div>
+            <p className="text-xs uppercase tracking-[0.32em] text-base-content/60">
+              Chats
+            </p>
+            <h2 className="text-lg font-semibold">History</h2>
+          </div>
+        )}
+        <button className="btn btn-ghost btn-xs" onClick={onToggleCollapse}>
+          {collapsed ? "»" : "«"}
         </button>
       </div>
 
-      {variant === "public" ? (
-        <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
-          <span>Sync</span>
-          <span className={`badge ${firestoreTone}`}>{firestoreStatus}</span>
-        </div>
-      ) : (
-        <div className="flex items-center justify-between rounded-box border border-base-200 bg-base-100 px-4 py-3">
-          <div>
-            <p className="text-sm font-semibold">Firestore sync</p>
-            <p className="text-xs text-base-content/60">
-              {firestoreStatus === "Connected"
-                ? "Chat history is synced to Firestore."
-                : firestoreStatus === "Disabled"
-                  ? "Firestore sync is disabled."
-                  : "Connect Firebase to sync chat history."}
-            </p>
-          </div>
-          <span className={`badge ${firestoreTone}`}>{firestoreStatus}</span>
+      <div className="px-4">
+        <button
+          className="btn btn-primary btn-sm w-full"
+          onClick={onStartNewChat}
+          type="button"
+        >
+          {collapsed ? "+" : "New chat"}
+        </button>
+      </div>
+
+      {collapsed ? null : (
+        <div className="px-4 pt-4">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(event) => onSearchTermChange(event.target.value)}
+            className="input input-bordered w-full"
+            placeholder="Search chats"
+          />
         </div>
       )}
 
-      {firestoreError ? (
-        <div className="alert alert-error">
-          <div>
-            <h3 className="font-semibold">Firestore error</h3>
-            <p className="mono text-sm opacity-90">{firestoreError}</p>
-          </div>
-        </div>
-      ) : null}
-
-      <div
-        className={`${
-          variant === "public"
-            ? "rounded-2xl border border-slate-200 bg-white"
-            : "rounded-box border border-base-200 bg-base-100"
-        } p-3`}
-      >
-        <div className="max-h-[360px] space-y-2 overflow-y-auto">
-          {hasFirestore ? (
-            chatThreads.length ? (
-              chatThreads.map((thread) => (
+      <div className="flex-1 overflow-y-auto px-3 py-4">
+        {hasFirestore ? (
+          filteredThreads.length ? (
+            <div className="space-y-2">
+              {filteredThreads.map((thread) => (
                 <button
                   key={thread.id}
                   onClick={() => onSelectChat(thread.id)}
-                  className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                  className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
                     thread.id === activeChatId
                       ? "border-primary/60 bg-base-100 shadow-sm"
-                      : "border-base-200 bg-base-200/60 hover:border-base-300"
+                      : "border-base-200/70 bg-base-200/40 hover:border-base-300"
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-4">
-                    <p className="font-semibold">{thread.title || "Untitled chat"}</p>
-                    <span className="text-xs text-base-content/60">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="truncate text-sm font-semibold">
+                      {thread.title || "Untitled chat"}
+                    </p>
+                    <span className="text-[11px] text-base-content/60">
                       {formatTimestamp(thread.updatedAt)}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs text-base-content/60">
-                    {thread.lastMessage
-                      ? truncateText(thread.lastMessage, 96)
-                      : "No messages yet."}
-                  </p>
+                  {collapsed ? null : (
+                    <p className="mt-1 text-xs text-base-content/60">
+                      {thread.lastMessage
+                        ? truncateText(thread.lastMessage, 96)
+                        : "No messages yet."}
+                    </p>
+                  )}
                 </button>
-              ))
-            ) : (
-              <p className="text-sm text-base-content/60">
-                No chat history yet. Start a new conversation to see it here.
-              </p>
-            )
+              ))}
+            </div>
           ) : (
             <p className="text-sm text-base-content/60">
-              {variant === "public"
-                ? firestoreStatus === "Disabled"
-                  ? "Chat history is disabled."
-                  : "History is unavailable until Firebase is configured."
-                : firestoreStatus === "Disabled"
-                  ? "Firestore sync is disabled. Enable it in Admin to use history."
-                  : "Firebase is not connected. Add config in Admin to enable history."}
+              No chat history yet. Start a new conversation.
             </p>
-          )}
-        </div>
+          )
+        ) : (
+          <p className="text-sm text-base-content/60">
+            {isPublicRoute
+              ? "History is unavailable until Firebase is configured."
+              : "Enable Firestore in Admin to use chat history."}
+          </p>
+        )}
       </div>
-    </>
+
+      <div className="border-t border-base-200 px-4 py-4">
+        {collapsed ? (
+          <span className={`badge badge-sm ${firestoreTone}`}>{firestoreStatus}</span>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-xs text-base-content/60">
+              <span>Sync</span>
+              <span className={`badge badge-sm ${firestoreTone}`}>{firestoreStatus}</span>
+            </div>
+            {firestoreError ? (
+              <div className="rounded-2xl border border-error/30 bg-error/10 px-3 py-2 text-xs text-error">
+                {firestoreError}
+              </div>
+            ) : null}
+            {isPublicRoute ? null : (
+              <div className="space-y-2">
+                <label className="form-control">
+                  <div className="label">
+                    <span className="label-text text-xs">API Base</span>
+                  </div>
+                  <input
+                    type="url"
+                    value={apiBase}
+                    onChange={(event) => onUpdateSetting("apiBase", event.target.value)}
+                    aria-label="API Base"
+                    className="input input-bordered input-sm"
+                  />
+                </label>
+                <label className="form-control">
+                  <div className="label">
+                    <span className="label-text text-xs">API Key</span>
+                  </div>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(event) => onUpdateSetting("apiKey", event.target.value)}
+                    aria-label="API Key"
+                    className="input input-bordered input-sm"
+                  />
+                </label>
+                <label className="form-control">
+                  <div className="label">
+                    <span className="label-text text-xs">Model</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={model}
+                    onChange={(event) => onUpdateSetting("model", event.target.value)}
+                    list="model-options"
+                    aria-label="Model"
+                    className="input input-bordered input-sm"
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </aside>
   );
-
-  if (variant === "public") {
-    return (
-      <section className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/80 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.1)] backdrop-blur">
-        {content}
-      </section>
-    );
-  }
-
-  return <Card>{content}</Card>;
 };
 
 export default ChatSidebar;

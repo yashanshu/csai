@@ -1,4 +1,4 @@
-# deploy.ps1 - Deployment Script for Llama 3 on Cloud Run
+# deploy.ps1 - Deployment Script for vLLM OpenAI-compatible API on Cloud Run
 
 $ErrorActionPreference = "Stop"
 
@@ -17,8 +17,12 @@ if (-not $ACTIVE_ACCOUNT) {
 }
 Write-Host "Using gcloud account: $ACTIVE_ACCOUNT"
 $RunRegion = "asia-southeast1"
-$ServiceName = "ollama-llama3"
-$ImageName = "gcr.io/$PROJECT_ID/ollama-llama3"
+$ImageName = "gcr.io/$PROJECT_ID/vllm-openai"
+$QwenServiceName = "vllm-qwen3-14b"
+$GptOssServiceName = "vllm-gpt-oss-20b"
+$GatewayServiceName = "vllm-gateway"
+$ModelBucket = if ($env:MODEL_BUCKET) { $env:MODEL_BUCKET } else { "$PROJECT_ID-vllm-models" }
+$ModelMountPath = if ($env:MODEL_MOUNT_PATH) { $env:MODEL_MOUNT_PATH } else { "/mnt/models" }
 
 # Enable Storage API (required for Cloud Build staging bucket).
 Write-Host "Enabling Storage API..."
@@ -45,6 +49,24 @@ if (-not ($dbList -match "\(default\)")) {
     Write-Host "Firestore database already exists, skipping creation."
 }
 
+# Create model cache bucket if it doesn't exist
+Write-Host "Ensuring model cache bucket exists..."
+$prevErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& gcloud storage buckets describe "gs://$ModelBucket" 2>$null
+$bucketExists = $LASTEXITCODE -eq 0
+$ErrorActionPreference = $prevErrorActionPreference
+if (-not $bucketExists) {
+    Write-Host "Creating bucket gs://$ModelBucket in $RunRegion..."
+    & gcloud storage buckets create "gs://$ModelBucket" --location="$RunRegion" --uniform-bucket-level-access
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: Failed to create bucket gs://$ModelBucket. Set MODEL_BUCKET to a unique name."
+        exit 1
+    }
+} else {
+    Write-Host "Bucket gs://$ModelBucket already exists, skipping creation."
+}
+
 # Create Admin Secret
 $timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $ADMIN_SECRET = if ($env:ADMIN_SECRET) { $env:ADMIN_SECRET } else { "super-secret-admin-key-$timestamp" }
@@ -60,6 +82,15 @@ $IMAGE_API_KEY = if ($env:IMAGE_API_KEY) { $env:IMAGE_API_KEY } else { "" }
 $IMAGE_API_KEY_HEADER = if ($env:IMAGE_API_KEY_HEADER) { $env:IMAGE_API_KEY_HEADER } else { "" }
 $IMAGE_API_KEY_PREFIX = if ($env:IMAGE_API_KEY_PREFIX) { $env:IMAGE_API_KEY_PREFIX } else { "" }
 $IMAGE_TIMEOUT_SECONDS = if ($env:IMAGE_TIMEOUT_SECONDS) { $env:IMAGE_TIMEOUT_SECONDS } else { "" }
+$VLLM_MODEL = if ($env:VLLM_MODEL) { $env:VLLM_MODEL } else { "llama3" }
+$VLLM_HOST = if ($env:VLLM_HOST) { $env:VLLM_HOST } else { "0.0.0.0" }
+$VLLM_PORT = if ($env:VLLM_PORT) { $env:VLLM_PORT } else { "8000" }
+$VLLM_ARGS = if ($env:VLLM_ARGS) { $env:VLLM_ARGS } else { "" }
+$QWEN_MODEL = if ($env:QWEN_MODEL) { $env:QWEN_MODEL } else { "Qwen/Qwen3-14B" }
+$GPT_OSS_MODEL = if ($env:GPT_OSS_MODEL) { $env:GPT_OSS_MODEL } else { "openai/gpt-oss-20b" }
+$VLLM_ARGS_QWEN = if ($env:VLLM_ARGS_QWEN) { $env:VLLM_ARGS_QWEN } else { $VLLM_ARGS }
+$VLLM_ARGS_GPT = if ($env:VLLM_ARGS_GPT) { $env:VLLM_ARGS_GPT } else { $VLLM_ARGS }
+$VLLM_ROUTING_STRATEGY = if ($env:VLLM_ROUTING_STRATEGY) { $env:VLLM_ROUTING_STRATEGY } else { "round_robin" }
 
 Write-Host "1. Building the container image..." -ForegroundColor Cyan
 & gcloud builds submit --tag "$ImageName" .
@@ -69,8 +100,8 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-Write-Host "2. Deploying to Cloud Run..." -ForegroundColor Cyan
-& gcloud run deploy "$ServiceName" `
+Write-Host "2. Deploying Qwen3-14B service..." -ForegroundColor Cyan
+& gcloud run deploy "$QwenServiceName" `
   --image "$ImageName" `
   --region "asia-southeast1" `
   --platform managed `
@@ -85,9 +116,53 @@ Write-Host "2. Deploying to Cloud Run..." -ForegroundColor Cyan
   --max-instances 1 `
   --concurrency 100 `
   --timeout 3600 `
-  --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET,DEFAULT_RATE_LIMIT_PER_MINUTE=$DEFAULT_RATE_LIMIT_PER_MINUTE,DEFAULT_QUOTA_PER_DAY=$DEFAULT_QUOTA_PER_DAY,MAX_BODY_BYTES=$MAX_BODY_BYTES,MODELS_CACHE_TTL_SECONDS=$MODELS_CACHE_TTL_SECONDS,IMAGE_API_URL=$IMAGE_API_URL,IMAGE_API_KEY=$IMAGE_API_KEY,IMAGE_API_KEY_HEADER=$IMAGE_API_KEY_HEADER,IMAGE_API_KEY_PREFIX=$IMAGE_API_KEY_PREFIX,IMAGE_TIMEOUT_SECONDS=$IMAGE_TIMEOUT_SECONDS"
+  --add-volume "name=model-cache,type=cloud-storage,bucket=$ModelBucket" `
+  --add-volume-mount "volume=model-cache,mount-path=$ModelMountPath" `
+  --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET,DEFAULT_RATE_LIMIT_PER_MINUTE=$DEFAULT_RATE_LIMIT_PER_MINUTE,DEFAULT_QUOTA_PER_DAY=$DEFAULT_QUOTA_PER_DAY,MAX_BODY_BYTES=$MAX_BODY_BYTES,MODELS_CACHE_TTL_SECONDS=$MODELS_CACHE_TTL_SECONDS,IMAGE_API_URL=$IMAGE_API_URL,IMAGE_API_KEY=$IMAGE_API_KEY,IMAGE_API_KEY_HEADER=$IMAGE_API_KEY_HEADER,IMAGE_API_KEY_PREFIX=$IMAGE_API_KEY_PREFIX,IMAGE_TIMEOUT_SECONDS=$IMAGE_TIMEOUT_SECONDS,MODEL_CACHE_DIR=$ModelMountPath,VLLM_MODEL=$QWEN_MODEL,VLLM_HOST=$VLLM_HOST,VLLM_PORT=$VLLM_PORT,VLLM_ARGS=$VLLM_ARGS_QWEN"
+
+Write-Host "3. Deploying GPT OSS 20B service..." -ForegroundColor Cyan
+& gcloud run deploy "$GptOssServiceName" `
+  --image "$ImageName" `
+  --region "asia-southeast1" `
+  --platform managed `
+  --allow-unauthenticated `
+  --execution-environment gen2 `
+  --no-cpu-throttling `
+  --cpu 8 `
+  --memory 32Gi `
+  --gpu 1 `
+  --gpu-type nvidia-l4 `
+  --no-gpu-zonal-redundancy `
+  --max-instances 1 `
+  --concurrency 100 `
+  --timeout 3600 `
+  --add-volume "name=model-cache,type=cloud-storage,bucket=$ModelBucket" `
+  --add-volume-mount "volume=model-cache,mount-path=$ModelMountPath" `
+  --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET,DEFAULT_RATE_LIMIT_PER_MINUTE=$DEFAULT_RATE_LIMIT_PER_MINUTE,DEFAULT_QUOTA_PER_DAY=$DEFAULT_QUOTA_PER_DAY,MAX_BODY_BYTES=$MAX_BODY_BYTES,MODELS_CACHE_TTL_SECONDS=$MODELS_CACHE_TTL_SECONDS,IMAGE_API_URL=$IMAGE_API_URL,IMAGE_API_KEY=$IMAGE_API_KEY,IMAGE_API_KEY_HEADER=$IMAGE_API_KEY_HEADER,IMAGE_API_KEY_PREFIX=$IMAGE_API_KEY_PREFIX,IMAGE_TIMEOUT_SECONDS=$IMAGE_TIMEOUT_SECONDS,MODEL_CACHE_DIR=$ModelMountPath,VLLM_MODEL=$GPT_OSS_MODEL,VLLM_HOST=$VLLM_HOST,VLLM_PORT=$VLLM_PORT,VLLM_ARGS=$VLLM_ARGS_GPT"
+
+$QWEN_URL = & gcloud run services describe "$QwenServiceName" --region="$RunRegion" --format="value(status.url)"
+$GPT_URL = & gcloud run services describe "$GptOssServiceName" --region="$RunRegion" --format="value(status.url)"
+$VLLM_MODEL_ROUTE_MAP = "$($QWEN_MODEL.ToLower())=$QWEN_URL,$($GPT_OSS_MODEL.ToLower())=$GPT_URL"
+$VLLM_UPSTREAMS = "$QWEN_URL,$GPT_URL"
+
+Write-Host "4. Deploying gateway service..." -ForegroundColor Cyan
+& gcloud run deploy "$GatewayServiceName" `
+  --image "$ImageName" `
+  --region "asia-southeast1" `
+  --platform managed `
+  --allow-unauthenticated `
+  --execution-environment gen2 `
+  --no-cpu-throttling `
+  --cpu 2 `
+  --memory 4Gi `
+  --max-instances 2 `
+  --concurrency 200 `
+  --timeout 3600 `
+  --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET,DEFAULT_RATE_LIMIT_PER_MINUTE=$DEFAULT_RATE_LIMIT_PER_MINUTE,DEFAULT_QUOTA_PER_DAY=$DEFAULT_QUOTA_PER_DAY,MAX_BODY_BYTES=$MAX_BODY_BYTES,MODELS_CACHE_TTL_SECONDS=$MODELS_CACHE_TTL_SECONDS,IMAGE_API_URL=$IMAGE_API_URL,IMAGE_API_KEY=$IMAGE_API_KEY,IMAGE_API_KEY_HEADER=$IMAGE_API_KEY_HEADER,IMAGE_API_KEY_PREFIX=$IMAGE_API_KEY_PREFIX,IMAGE_TIMEOUT_SECONDS=$IMAGE_TIMEOUT_SECONDS,VLLM_DISABLE_LOCAL=1,VLLM_UPSTREAMS=$VLLM_UPSTREAMS,VLLM_MODEL_ROUTE_MAP=$VLLM_MODEL_ROUTE_MAP,VLLM_ROUTING_STRATEGY=$VLLM_ROUTING_STRATEGY"
 
 Write-Host "Deployment complete!" -ForegroundColor Green
 Write-Host "Admin Secret: $ADMIN_SECRET" -ForegroundColor Yellow
-$serviceUrl = & gcloud run services describe "$ServiceName" --region="$RunRegion" --format="value(status.url)"
-Write-Host "Service URL: $serviceUrl"
+Write-Host "Qwen3-14B URL: $QWEN_URL"
+Write-Host "GPT OSS 20B URL: $GPT_URL"
+$gatewayUrl = & gcloud run services describe "$GatewayServiceName" --region="$RunRegion" --format="value(status.url)"
+Write-Host "Gateway URL: $gatewayUrl"

@@ -21,10 +21,19 @@ test("renders chat threads and triggers selection", async () => {
       onSelectChat={onSelectChat}
       onStartNewChat={onStartNewChat}
       hasFirestore
+      collapsed={false}
+      onToggleCollapse={vi.fn()}
+      searchTerm=""
+      onSearchTermChange={vi.fn()}
+      apiKey=""
+      apiBase=""
+      model=""
+      onUpdateSetting={vi.fn()}
+      isPublicRoute={false}
     />
   );
 
-  expect(screen.getByText("Conversations")).toBeInTheDocument();
+  expect(screen.getByText("History")).toBeInTheDocument();
   expect(screen.getByText("First chat")).toBeInTheDocument();
   expect(screen.getByText("Second chat")).toBeInTheDocument();
 
