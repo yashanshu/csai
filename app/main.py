@@ -14,16 +14,18 @@ app = FastAPI()
 
 _cors_origins = core._split_cors_origins(core.CORS_ALLOW_ORIGINS)
 _cors_origin_regex = core.CORS_ALLOW_ORIGIN_REGEX.strip() or None
-if _cors_origins or _cors_origin_regex:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_cors_origins or [],
-        allow_origin_regex=_cors_origin_regex,
-        allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=[core.REQUEST_ID_HEADER],
-    )
+if not _cors_origins and not _cors_origin_regex:
+    _cors_origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins or [],
+    allow_origin_regex=_cors_origin_regex,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=[core.REQUEST_ID_HEADER],
+)
 
 
 @app.middleware("http")
