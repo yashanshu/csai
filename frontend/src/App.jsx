@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   activateAdminKey,
+  fetchHealth,
   fetchAdminUsage,
   generateAdminKey,
   generateText,
   listAdminKeys,
   revokeAdminKey,
+  updateAdminKey,
 } from "./api.js";
 import AdminView from "./components/admin/AdminView.jsx";
 import PublicChatView from "./components/chat/PublicChatView.jsx";
@@ -23,6 +25,7 @@ import {
   MODEL_OPTIONS,
   PUBLIC_API_KEY,
   SETTINGS_STORAGE_KEY,
+  THEME_STORAGE_KEY,
   VIEW_STORAGE_KEY,
 } from "./config/appConfig.js";
 import { useFirestoreChat } from "./hooks/useFirestoreChat.js";
@@ -73,9 +76,21 @@ const getRouteMode = () => {
   return path.startsWith("/chat") ? "public" : "studio";
 };
 
+const loadStoredTheme = () => {
+  if (typeof window === "undefined") {
+    return "relay";
+  }
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return stored === "relay-dark" ? "relay-dark" : "relay";
+};
+
 export default function App() {
   const [routeMode] = useState(getRouteMode);
   const [view, setView] = useState(loadStoredView);
+  const [theme, setTheme] = useState(loadStoredTheme);
+  const [adminSection, setAdminSection] = useState("overview");
+  const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(false);
+  const [chatSearch, setChatSearch] = useState("");
   const hasAdminPassword = ADMIN_PASSWORD.trim().length > 0;
   const [adminUnlocked, setAdminUnlocked] = useState(() =>
     hasAdminPassword ? loadStoredAdminUnlock() : true
@@ -117,6 +132,7 @@ export default function App() {
   const [adminUsage, setAdminUsage] = useState(null);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [keysLimit, setKeysLimit] = useState(100);
+  const [adminHealth, setAdminHealth] = useState(null);
   const [chatInput, setChatInput] = useState("");
   const [chatMode, setChatMode] = useState("text");
   const [imageOptions, setImageOptions] = useState({
@@ -162,6 +178,14 @@ export default function App() {
     const { adminSecret: _ignored, ...persisted } = settings;
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(persisted));
   }, [settings]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -285,6 +309,10 @@ export default function App() {
     setRequestId("");
   };
 
+  const handleToggleTheme = () => {
+    setTheme((prev) => (prev === "relay-dark" ? "relay" : "relay-dark"));
+  };
+
   const handleAdminPasswordChange = (value) => {
     setAdminPasswordInput(value);
     if (adminGateError) {
@@ -345,11 +373,11 @@ export default function App() {
     }
   };
 
-  const handleRevokeKey = async () => {
+  const handleRevokeKey = async (overrideKey) => {
     if (!ensureAdminReady() || isAdminLoading) {
       return;
     }
-    const target = adminTargetKey.trim();
+    const target = (overrideKey || adminTargetKey).trim();
     if (!target) {
       setAdminError("Provide an API key to revoke.");
       setAdminStatus("Error");
@@ -375,11 +403,11 @@ export default function App() {
     }
   };
 
-  const handleActivateKey = async () => {
+  const handleActivateKey = async (overrideKey) => {
     if (!ensureAdminReady() || isAdminLoading) {
       return;
     }
-    const target = adminTargetKey.trim();
+    const target = (overrideKey || adminTargetKey).trim();
     if (!target) {
       setAdminError("Provide an API key to activate.");
       setAdminStatus("Error");
@@ -451,6 +479,59 @@ export default function App() {
     } catch (err) {
       setAdminStatus("Error");
       setAdminError(err?.message || "Failed to fetch usage.");
+    } finally {
+      setIsAdminLoading(false);
+    }
+  };
+
+  const handleUpdateKey = async (apiKey, updates) => {
+    if (!ensureAdminReady() || isAdminLoading) {
+      return;
+    }
+    const target = apiKey?.trim();
+    if (!target) {
+      setAdminError("Provide an API key to update.");
+      setAdminStatus("Error");
+      return null;
+    }
+    setIsAdminLoading(true);
+    setAdminStatus("Updating key...");
+    setAdminError("");
+    setAdminRequestId("");
+    try {
+      const { data, requestId: nextRequestId } = await updateAdminKey({
+        baseUrl: settings.apiBase,
+        adminSecret: settings.adminSecret,
+        apiKey: target,
+        updates,
+      });
+      setAdminRequestId(nextRequestId || "");
+      setAdminStatus("Done");
+      return data;
+    } catch (err) {
+      setAdminStatus("Error");
+      setAdminError(err?.message || "Failed to update key.");
+      return null;
+    } finally {
+      setIsAdminLoading(false);
+    }
+  };
+
+  const handleFetchHealth = async () => {
+    setIsAdminLoading(true);
+    setAdminStatus("Loading health...");
+    setAdminError("");
+    setAdminRequestId("");
+    try {
+      const { data, requestId: nextRequestId } = await fetchHealth({
+        baseUrl: settings.apiBase,
+      });
+      setAdminHealth(data || null);
+      setAdminRequestId(nextRequestId || "");
+      setAdminStatus("Done");
+    } catch (err) {
+      setAdminStatus("Error");
+      setAdminError(err?.message || "Failed to fetch health.");
     } finally {
       setIsAdminLoading(false);
     }
@@ -535,6 +616,15 @@ export default function App() {
     onSelectChat: handleSelectChat,
     onStartNewChat: handleStartNewChat,
     hasFirestore: Boolean(chat.firestoreDb),
+    collapsed: chatSidebarCollapsed,
+    onToggleCollapse: () => setChatSidebarCollapsed((prev) => !prev),
+    searchTerm: chatSearch,
+    onSearchTermChange: setChatSearch,
+    apiKey: settings.apiKey,
+    apiBase: settings.apiBase,
+    model: settings.model,
+    onUpdateSetting: updateSetting,
+    isPublicRoute,
   };
 
   const chatPanelProps = {
@@ -556,6 +646,10 @@ export default function App() {
     onInputModeChange: setChatMode,
     imageOptions,
     onImageOptionsChange: handleImageOptionsChange,
+    model: settings.model,
+    onModelChange: (value) => updateSetting("model", value),
+    onToggleSidebar: () => setChatSidebarCollapsed((prev) => !prev),
+    sidebarCollapsed: chatSidebarCollapsed,
   };
 
   const activeView = isPublicRoute ? "user" : view;
@@ -579,12 +673,16 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen">
-      <div className="mx-auto max-w-6xl px-6 pb-16 pt-10">
-        {isPublicRoute ? null : (
-          <AppHeader view={view} onChangeView={setView} />
-        )}
+    <div className="min-h-screen bg-base-100 text-base-content">
+      <AppHeader
+        view={activeView}
+        onChangeView={setView}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
+        isPublic={isPublicRoute}
+      />
 
+      <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 pb-10 pt-6 md:px-6">
         {isPublicRoute ? (
           <PublicChatView
             chatPanelProps={chatPanelProps}
@@ -592,10 +690,6 @@ export default function App() {
           />
         ) : activeView === "user" ? (
           <UserChatView
-            settings={settings}
-            defaultModel={DEFAULT_MODEL}
-            onUpdateSetting={updateSetting}
-            onOpenAdmin={() => setView("admin")}
             chatSidebarProps={chatSidebarProps}
             chatPanelProps={chatPanelProps}
           />
@@ -629,6 +723,9 @@ export default function App() {
             generatedKey={generatedKey}
             adminKeys={adminKeys}
             adminUsage={adminUsage}
+            adminHealth={adminHealth}
+            adminSection={adminSection}
+            setAdminSection={setAdminSection}
             handleGenerate={handleGenerate}
             handleStop={handleStop}
             handleClear={handleClear}
@@ -637,6 +734,8 @@ export default function App() {
             handleRevokeKey={handleRevokeKey}
             handleListKeys={handleListKeys}
             handleFetchUsage={handleFetchUsage}
+            handleUpdateKey={handleUpdateKey}
+            handleFetchHealth={handleFetchHealth}
           />
         )}
       </div>

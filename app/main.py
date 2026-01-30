@@ -63,11 +63,13 @@ async def auth_middleware(request: Request, call_next):
     response = await call_next(request)
     duration_ms = int((time.perf_counter() - start) * 1000)
     if context:
+        token_usage = getattr(request.state, "token_usage", None)
         await core.record_api_key_usage(
             context["api_key"],
             request.url.path,
             response.status_code,
             duration_ms,
+            token_usage=token_usage,
         )
     return response
 

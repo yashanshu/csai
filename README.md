@@ -1,6 +1,6 @@
-# Host Llama 3 (8B) on Google Cloud Run
+# Host vLLM OpenAI-Compatible API on Google Cloud Run
 
-This project deploys a serverless Llama 3 model using Ollama on Google Cloud Run with NVIDIA L4 GPU support.
+This project deploys a serverless vLLM OpenAI-compatible API on Google Cloud Run with NVIDIA L4 GPU support.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ This project deploys a serverless Llama 3 model using Ollama on Google Cloud Run
 
 ## Files
 
-*   `Dockerfile`: Bakes the `llama3` model into the container so there are no download times at startup.
+*   `Dockerfile`: Builds the API container and runs vLLM alongside the FastAPI gateway.
 *   `deploy.ps1` / `deploy.sh`: Automates the build + deploy process.
 *   `teardown.ps1` / `teardown.sh`: Cleans up the Cloud Run service and image.
 
@@ -31,10 +31,11 @@ This project deploys a serverless Llama 3 model using Ollama on Google Cloud Run
     ```bash
     ./deploy.sh
     ```
+    Set `QWEN_MODEL` or `GPT_OSS_MODEL` before running if you want to override the default model names (`Qwen/Qwen3-14B` and `openai/gpt-oss-20b`).
 
 ## Testing
 
-Once deployed, the script will output your Service URL (e.g., `https://ollama-llama3-xyz.run.app`).
+Once deployed, the script will output your Service URL (e.g., `https://vllm-openai-xyz.run.app`).
 
 Generate an API key (use the admin secret printed by the deploy script):
 
@@ -46,11 +47,12 @@ curl -X POST https://YOUR_SERVICE_URL/admin/generate-key \
 **Test using curl:**
 
 ```bash
-curl -X POST https://YOUR_SERVICE_URL/api/generate -d '{
+curl -X POST https://YOUR_SERVICE_URL/v1/chat/completions -d '{
   "model": "llama3",
-  "prompt": "Explain specific impulse in one sentence.",
+  "messages": [{"role":"user","content":"Explain specific impulse in one sentence."}],
   "stream": false
 }' \
+  -H "Content-Type: application/json" \
   -H "X-API-Key: YOUR_API_KEY"
 ```
 
@@ -144,6 +146,18 @@ curl https://YOUR_SERVICE_URL/models \
 
 Responses are cached in-memory for `MODELS_CACHE_TTL_SECONDS` (default 30s).
 
+### Model routing (multi-upstream)
+
+When `VLLM_UPSTREAMS` is set, the gateway will route requests across multiple vLLM services.
+
+Routing preference:
+- Header: `X-Model-Preference: qwen3-14b` or `X-Model-Preference: gpt-oss-20b`
+- Query param: `?preference=qwen3-14b`
+- Body: `model` (matched against `VLLM_MODEL_ROUTE_MAP`)
+
+Load-based routing uses round-robin (default). Override with `VLLM_ROUTING_STRATEGY=random`.
+Sticky routing uses `X-Client-Id` by default and can be tuned via `VLLM_STICKY_HEADER`, `VLLM_STICKY_TTL_SECONDS`, and `VLLM_STICKY_MAX_ENTRIES`.
+
 ### Health (deep check)
 
 ```bash
@@ -152,13 +166,13 @@ curl "https://YOUR_SERVICE_URL/health?deep=true"
 
 ### Text-only responses
 
-For `/api/generate` or `/api/chat`, request plain text output with `format=text`:
+For `/v1/completions` or `/v1/chat/completions`, request plain text output with `format=text`:
 
 ```bash
-curl -X POST "https://YOUR_SERVICE_URL/api/generate?format=text" \
+curl -X POST "https://YOUR_SERVICE_URL/v1/chat/completions?format=text" \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"llama3","prompt":"One sentence please.","stream":true}'
+  -d '{"model":"llama3","messages":[{"role":"user","content":"One sentence please."}],"stream":true}'
 ```
 
 You can also send `X-Response-Format: text` instead of the query string.
@@ -179,5 +193,5 @@ python -m pytest -q
 
 ## Troubleshooting
 
-*   **403 from Ollama in server logs**: The proxy strips `Origin` and `Referer` on upstream calls so Ollama doesn't enforce browser CORS. If you still see 403s, ensure clients call the Cloud Run service URL (not `localhost:11434` directly).
+*   **Upstream 4xx/5xx from vLLM**: The proxy strips `Origin` and `Referer` on upstream calls. If you still see 4xx/5xx from vLLM, ensure clients call the Cloud Run service URL (not the internal vLLM port) and that `VLLM_MODEL` is correct.
 

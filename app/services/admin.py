@@ -73,6 +73,39 @@ def list_keys(limit: int) -> dict:
     return {"count": len(keys), "keys": keys}
 
 
+def update_key(api_key: str, updates: dict) -> dict:
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Missing api_key", "code": "missing_api_key"},
+        )
+    if not isinstance(updates, dict):
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Invalid updates payload", "code": "invalid_body"},
+        )
+    allowed_fields = {
+        "description",
+        "status",
+        "rate_limit_per_minute",
+        "quota_per_day",
+        "max_body_bytes",
+        "allowed_models",
+    }
+    safe_updates = {k: v for k, v in updates.items() if k in allowed_fields}
+    if not safe_updates:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "No valid fields to update", "code": "invalid_update"},
+        )
+    db = require_firestore("key update")
+    db.collection(core.COLLECTION_NAME).document(api_key).set(
+        {**safe_updates, "updated_at": firestore.SERVER_TIMESTAMP},
+        merge=True,
+    )
+    return {"api_key": api_key, "status": "updated", "updates": safe_updates}
+
+
 def get_usage_summary(api_key: Optional[str], limit: int) -> dict:
     db = require_firestore("usage fetch")
     if api_key:

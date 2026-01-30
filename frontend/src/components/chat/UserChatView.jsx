@@ -1,27 +1,13 @@
 import ChatPanel from "./ChatPanel.jsx";
 import ChatSidebar from "./ChatSidebar.jsx";
-import ConnectionCard from "./ConnectionCard.jsx";
 
-const UserChatView = ({
-  settings,
-  defaultModel,
-  onUpdateSetting,
-  onOpenAdmin,
-  chatSidebarProps,
-  chatPanelProps,
-}) => {
+const UserChatView = ({ chatSidebarProps, chatPanelProps }) => {
   return (
-    <main className="mt-10 grid gap-8 lg:grid-cols-[0.45fr_0.55fr]">
-      <div className="grid gap-8">
-        <ChatSidebar {...chatSidebarProps} />
-        <ConnectionCard
-          settings={settings}
-          defaultModel={defaultModel}
-          onUpdateSetting={onUpdateSetting}
-          onOpenAdmin={onOpenAdmin}
-        />
+    <main className="flex min-h-[78vh] w-full flex-col gap-6 lg:flex-row">
+      <ChatSidebar {...chatSidebarProps} />
+      <div className="flex min-h-[78vh] flex-1 flex-col">
+        <ChatPanel {...chatPanelProps} />
       </div>
-      <ChatPanel {...chatPanelProps} />
     </main>
   );
 };

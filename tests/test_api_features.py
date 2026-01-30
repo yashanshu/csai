@@ -6,6 +6,7 @@ import respx
 from fastapi import HTTPException
 
 from app import core, main
+from app.services import admin as admin_service
 
 
 pytestmark = pytest.mark.asyncio
@@ -28,7 +29,11 @@ def _patch_common(monkeypatch):
     monkeypatch.setattr(core, "verify_api_key", _fake_verify_api_key)
     monkeypatch.setattr(core, "record_api_key_usage", _noop_usage)
     monkeypatch.setattr(core, "apply_rate_limits", _noop_rate_limits)
-    monkeypatch.setattr(core, "OLLAMA_URL", "http://ollama.test")
+    monkeypatch.setattr(core, "VLLM_URL", "http://vllm.test")
+    monkeypatch.setattr(core, "VLLM_UPSTREAMS", ["http://vllm.test"])
+    monkeypatch.setattr(core, "VLLM_MODEL_ROUTE_MAP", {})
+    monkeypatch.setattr(core, "VLLM_ROUTING_STRATEGY", "round_robin")
+    monkeypatch.setattr(core, "_upstream_index", 0)
     monkeypatch.setattr(core, "_models_cache", {"expires_at": 0.0, "data": None})
 
 
@@ -41,8 +46,8 @@ async def test_request_too_large_returns_error_envelope(monkeypatch):
     transport = httpx.ASGITransport(app=main.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
-            "/api/generate",
-            content=b'{"model":"llama3","prompt":"hello"}',
+            "/v1/chat/completions",
+            content=b'{"model":"llama3","messages":[{"role":"user","content":"hello"}]}',
             headers={"content-type": "application/json"},
         )
 
@@ -61,8 +66,8 @@ async def test_model_allowlist_enforced(monkeypatch):
     transport = httpx.ASGITransport(app=main.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
-            "/api/generate",
-            json={"model": "other", "prompt": "hi"},
+            "/v1/chat/completions",
+            json={"model": "other", "messages": [{"role": "user", "content": "hi"}]},
         )
 
     assert resp.status_code == 403
@@ -93,8 +98,11 @@ async def test_models_cache(monkeypatch):
     monkeypatch.setattr(core, "MODELS_CACHE_TTL_SECONDS", 60)
     monkeypatch.setattr(core, "_models_cache", {"expires_at": 0.0, "data": None})
 
-    route = respx.get("http://ollama.test/api/tags").mock(
-        return_value=httpx.Response(200, json={"models": [{"name": "llama3"}]})
+    route = respx.get("http://vllm.test/v1/models").mock(
+        return_value=httpx.Response(
+            200,
+            json={"object": "list", "data": [{"id": "llama3"}]},
+        )
     )
 
     transport = httpx.ASGITransport(app=main.app)
@@ -183,3 +191,23 @@ async def test_usage_endpoint_returns_summary(monkeypatch):
     assert payload["average_latency_ms"] == 15
     assert payload["error_count"] == 1
     assert payload["last_used"] == now.isoformat()
+
+
+async def test_update_key_endpoint(monkeypatch):
+    def _fake_update_key(api_key, updates):
+        return {"api_key": api_key, "status": "updated", "updates": updates}
+
+    monkeypatch.setattr(admin_service, "update_key", _fake_update_key)
+
+    transport = httpx.ASGITransport(app=main.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/admin/update-key",
+            headers={"Admin-Secret": core.ADMIN_SECRET},
+            json={"api_key": "key-1", "updates": {"description": "New owner"}},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["api_key"] == "key-1"
+    assert payload["updates"]["description"] == "New owner"

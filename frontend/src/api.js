@@ -60,7 +60,7 @@ export async function generateText({
   signal,
   onChunk,
 }) {
-  const url = new URL(`${baseUrl.replace(/\/+$/, "")}/api/generate`);
+  const url = new URL(`${baseUrl.replace(/\/+$/, "")}/v1/chat/completions`);
   if (!stream) {
     url.searchParams.set("format", "text");
   }
@@ -76,7 +76,11 @@ export async function generateText({
   const response = await fetch(url, {
     method: "POST",
     headers,
-    body: JSON.stringify({ model, prompt, stream }),
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      stream,
+    }),
     signal,
   });
 
@@ -100,6 +104,44 @@ export async function generateText({
   let buffer = "";
   let aggregated = "";
 
+  const extractChunk = (payload) => {
+    const choice = payload?.choices?.[0];
+    if (!choice) {
+      return "";
+    }
+    if (choice.delta?.content) {
+      return choice.delta.content;
+    }
+    if (choice.text) {
+      return choice.text;
+    }
+    return "";
+  };
+
+  const handleLine = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return;
+    }
+    const data = trimmed.startsWith("data:") ? trimmed.slice(5).trim() : trimmed;
+    if (!data || data === "[DONE]") {
+      return;
+    }
+    try {
+      const payload = JSON.parse(data);
+      const chunk = extractChunk(payload);
+      if (chunk && onChunk) {
+        onChunk(chunk);
+      }
+      aggregated += chunk;
+    } catch {
+      if (onChunk) {
+        onChunk(data);
+      }
+      aggregated += data;
+    }
+  };
+
   while (true) {
     const { value, done } = await reader.read();
     if (done) {
@@ -108,43 +150,14 @@ export async function generateText({
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
     buffer = lines.pop() || "";
-
     for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
-      try {
-        const payload = JSON.parse(trimmed);
-        const chunk = payload.response || "";
-        if (chunk && onChunk) {
-          onChunk(chunk);
-        }
-        aggregated += chunk;
-      } catch {
-        if (onChunk) {
-          onChunk(trimmed);
-        }
-        aggregated += trimmed;
-      }
+      handleLine(line);
     }
   }
 
   const remaining = buffer.trim();
   if (remaining) {
-    try {
-      const payload = JSON.parse(remaining);
-      const chunk = payload.response || "";
-      if (chunk && onChunk) {
-        onChunk(chunk);
-      }
-      aggregated += chunk;
-    } catch {
-      if (onChunk) {
-        onChunk(remaining);
-      }
-      aggregated += remaining;
-    }
+    handleLine(remaining);
   }
 
   return { text: aggregated, requestId };
@@ -158,7 +171,7 @@ export async function sendChat({
   messages,
   signal,
 }) {
-  const url = new URL(`${baseUrl.replace(/\/+$/, "")}/api/chat`);
+  const url = new URL(`${baseUrl.replace(/\/+$/, "")}/v1/chat/completions`);
   url.searchParams.set("format", "text");
 
   const headers = { "Content-Type": "application/json" };
@@ -242,6 +255,16 @@ export async function generateAdminKey({ baseUrl, adminSecret }) {
   });
 }
 
+export async function updateAdminKey({ baseUrl, adminSecret, apiKey, updates }) {
+  return adminRequest({
+    baseUrl,
+    adminSecret,
+    path: "/admin/update-key",
+    method: "POST",
+    body: { api_key: apiKey, updates },
+  });
+}
+
 export async function revokeAdminKey({ baseUrl, adminSecret, apiKey }) {
   return adminRequest({
     baseUrl,
@@ -280,4 +303,15 @@ export async function fetchAdminUsage({ baseUrl, adminSecret, apiKey, limit = 10
     adminSecret,
     path: `/admin/usage?${params}`,
   });
+}
+
+export async function fetchHealth({ baseUrl }) {
+  const url = new URL(`${baseUrl.replace(/\/+$/, "")}/health?deep=true`);
+  const response = await fetch(url, { method: "GET" });
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+  const requestId = response.headers.get("x-request-id") || "";
+  const data = await response.json();
+  return { data, requestId };
 }

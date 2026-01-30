@@ -62,6 +62,21 @@ async def list_keys(request: Request, limit: int = 100):
     return admin_service.list_keys(limit)
 
 
+@router.post("/admin/update-key")
+async def update_key(request: Request):
+    admin_service.require_admin_secret(request)
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Request body must be valid JSON", "code": "invalid_json"},
+        )
+    api_key = payload.get("api_key")
+    updates = payload.get("updates") or {}
+    return admin_service.update_key(api_key, updates)
+
+
 @router.get("/admin/usage")
 async def usage(request: Request, api_key: Optional[str] = None, limit: int = 100):
     admin_service.require_admin_secret(request)

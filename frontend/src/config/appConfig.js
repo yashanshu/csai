@@ -55,10 +55,11 @@ export const DEFAULT_API_BASE =
 export const PUBLIC_API_KEY = import.meta.env.VITE_PUBLIC_API_KEY || "";
 export const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "";
 export const DEFAULT_PROMPT = "One sentence please.";
-export const DEFAULT_MODEL = "llama3";
+export const DEFAULT_MODEL = "Qwen/Qwen3-14B";
 export const SETTINGS_STORAGE_KEY = "ollama-relay-settings";
 export const VIEW_STORAGE_KEY = "ollama-relay-view";
-export const MODEL_OPTIONS = ["llama3", "qwen3:8b"];
+export const THEME_STORAGE_KEY = "ollama-relay-theme";
+export const MODEL_OPTIONS = ["Qwen/Qwen3-14B", "openai/gpt-oss-20b"];
 export const FIREBASE_FIELDS = [
   { key: "apiKey", label: "API Key" },
   { key: "authDomain", label: "Auth Domain" },

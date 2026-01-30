@@ -1,4 +1,4 @@
-FROM ollama/ollama
+FROM vllm/vllm-openai:latest
 
 # Install Python, pip, and basic utilities
 RUN apt-get update && apt-get install -y \
@@ -17,13 +17,6 @@ RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 # Copy application code
 COPY app /app/app
 RUN chmod +x /app/app/start.sh
-
-# Pull the model during build
-RUN ollama serve & \
-    sleep 10 && \
-    ollama pull llama3 && \
-    ollama pull qwen3:8b && \
-    pkill ollama
 
 # Expose FastAPI port
 EXPOSE 8080

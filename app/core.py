@@ -1,5 +1,8 @@
 import os
 import json
+import threading
+import random
+import time
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 
@@ -22,7 +25,22 @@ def _safe_int_env(name: str, default: int) -> int:
         return default
 
 
-OLLAMA_URL = "http://localhost:11434"
+VLLM_URL = os.environ.get("VLLM_URL", "http://localhost:8000")
+VLLM_UPSTREAMS = [
+    item.strip()
+    for item in os.environ.get("VLLM_UPSTREAMS", "").split(",")
+    if item.strip()
+]
+VLLM_MODEL_ROUTE_MAP = {
+    item.split("=", 1)[0].strip().lower(): item.split("=", 1)[1].strip()
+    for item in os.environ.get("VLLM_MODEL_ROUTE_MAP", "").split(",")
+    if "=" in item and item.split("=", 1)[0].strip() and item.split("=", 1)[1].strip()
+}
+VLLM_ROUTING_STRATEGY = os.environ.get("VLLM_ROUTING_STRATEGY", "round_robin").strip().lower()
+VLLM_STICKY_ENABLED = os.environ.get("VLLM_STICKY_ENABLED", "1") not in {"0", "false", "False"}
+VLLM_STICKY_HEADER = os.environ.get("VLLM_STICKY_HEADER", "X-Client-Id")
+VLLM_STICKY_TTL_SECONDS = _safe_int_env("VLLM_STICKY_TTL_SECONDS", 900)
+VLLM_STICKY_MAX_ENTRIES = _safe_int_env("VLLM_STICKY_MAX_ENTRIES", 5000)
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "change-me-please")
 COLLECTION_NAME = "api_keys"
 USAGE_COLLECTION = "api_key_usage"
@@ -49,6 +67,10 @@ except Exception as e:
 
 
 _models_cache: Dict[str, Any] = {"expires_at": 0.0, "data": None}
+_upstream_index = 0
+_upstream_lock = threading.Lock()
+_sticky_cache: Dict[str, Dict[str, Any]] = {}
+_sticky_lock = threading.Lock()
 
 
 def _split_cors_origins(value: str) -> List[str]:
@@ -78,13 +100,126 @@ def _serialize_firestore_value(value: Any) -> Any:
     return value
 
 
-def _extract_ollama_text(payload: Dict[str, Any]) -> str:
-    if "response" in payload:
-        return payload.get("response") or ""
+def _extract_openai_text(payload: Dict[str, Any]) -> str:
+    choices = payload.get("choices")
+    if isinstance(choices, list) and choices:
+        choice = choices[0] or {}
+        if isinstance(choice, dict):
+            message = choice.get("message")
+            if isinstance(message, dict):
+                content = message.get("content")
+                if content is not None:
+                    return str(content)
+            text = choice.get("text")
+            if text is not None:
+                return str(text)
     message = payload.get("message") or {}
     if isinstance(message, dict) and "content" in message:
         return message.get("content") or ""
     return ""
+
+
+def _get_vllm_upstreams() -> List[str]:
+    if VLLM_UPSTREAMS:
+        return VLLM_UPSTREAMS
+    return [VLLM_URL]
+
+
+def _next_upstream(upstreams: List[str]) -> str:
+    if not upstreams:
+        return VLLM_URL
+    if len(upstreams) == 1:
+        return upstreams[0]
+    if VLLM_ROUTING_STRATEGY == "random":
+        return random.choice(upstreams)
+    global _upstream_index
+    with _upstream_lock:
+        choice = upstreams[_upstream_index % len(upstreams)]
+        _upstream_index += 1
+        return choice
+
+
+def _resolve_preference(preference: Optional[str], model: Optional[str], upstreams: List[str]) -> Optional[str]:
+    if preference:
+        pref = preference.strip()
+        pref_lower = pref.lower()
+        if pref.startswith("http://") or pref.startswith("https://"):
+            return pref
+        mapped = VLLM_MODEL_ROUTE_MAP.get(pref_lower)
+        if mapped:
+            return mapped
+        for key, url in VLLM_MODEL_ROUTE_MAP.items():
+            if pref_lower == key or pref_lower.startswith(key):
+                return url
+    if model:
+        model_lower = model.lower()
+        mapped = VLLM_MODEL_ROUTE_MAP.get(model_lower)
+        if mapped:
+            return mapped
+        for key, url in VLLM_MODEL_ROUTE_MAP.items():
+            if model_lower == key or model_lower.startswith(key):
+                return url
+    return None
+
+
+def select_vllm_upstreams(request: Request, body_json: Optional[Dict[str, Any]] = None) -> List[str]:
+    upstreams = _get_vllm_upstreams()
+    if not upstreams:
+        return [VLLM_URL]
+    if len(upstreams) == 1:
+        return upstreams
+
+    preference = request.headers.get("X-Model-Preference") or request.query_params.get("preference")
+    model = None
+    if isinstance(body_json, dict):
+        model = body_json.get("model")
+    preferred = _resolve_preference(preference, model, upstreams)
+
+    sticky_key = None
+    if VLLM_STICKY_ENABLED:
+        sticky_key = request.headers.get(VLLM_STICKY_HEADER)
+        if sticky_key:
+            now = time.time()
+            with _sticky_lock:
+                entry = _sticky_cache.get(sticky_key)
+                if entry and entry.get("expires_at", 0) > now:
+                    sticky_upstream = entry.get("upstream")
+                    if sticky_upstream in upstreams:
+                        return [sticky_upstream] + [
+                            item for item in upstreams if item != sticky_upstream
+                        ]
+                elif entry:
+                    _sticky_cache.pop(sticky_key, None)
+
+    if preferred and preferred in upstreams:
+        ordered = [preferred] + [item for item in upstreams if item != preferred]
+        if VLLM_STICKY_ENABLED and sticky_key:
+            _store_sticky_mapping(sticky_key, preferred)
+        return ordered
+
+    primary = _next_upstream(upstreams)
+    if VLLM_STICKY_ENABLED and sticky_key:
+        _store_sticky_mapping(sticky_key, primary)
+    return [primary] + [item for item in upstreams if item != primary]
+
+
+def _store_sticky_mapping(sticky_key: str, upstream: str) -> None:
+    if not sticky_key:
+        return
+    ttl = VLLM_STICKY_TTL_SECONDS
+    if ttl <= 0:
+        return
+    now = time.time()
+    with _sticky_lock:
+        if len(_sticky_cache) >= max(1, VLLM_STICKY_MAX_ENTRIES):
+            expired_keys = [
+                key for key, entry in _sticky_cache.items() if entry.get("expires_at", 0) <= now
+            ]
+            for key in expired_keys:
+                _sticky_cache.pop(key, None)
+            if len(_sticky_cache) >= VLLM_STICKY_MAX_ENTRIES:
+                _sticky_cache.pop(next(iter(_sticky_cache)), None)
+        _sticky_cache[sticky_key] = {"upstream": upstream, "expires_at": now + ttl}
 
 
 def _error_payload(message: str, code: str, request_id: Optional[str]) -> Dict[str, Any]:
@@ -165,6 +300,12 @@ def _build_usage_summary(api_key: str, data: Dict[str, Any]) -> Dict[str, Any]:
         "quota_per_day": data.get("quota_per_day"),
         "max_body_bytes": data.get("max_body_bytes"),
         "allowed_models": data.get("allowed_models"),
+        "total_prompt_tokens": int(data.get("total_prompt_tokens") or 0),
+        "total_completion_tokens": int(data.get("total_completion_tokens") or 0),
+        "total_tokens": int(data.get("total_tokens") or 0),
+        "last_prompt_tokens": int(data.get("last_prompt_tokens") or 0),
+        "last_completion_tokens": int(data.get("last_completion_tokens") or 0),
+        "last_total_tokens": int(data.get("last_total_tokens") or 0),
     }
 
 
@@ -233,6 +374,7 @@ async def record_api_key_usage(
     path: str,
     status_code: int,
     latency_ms: int,
+    token_usage: Optional[Dict[str, Any]] = None,
 ) -> None:
     if not db:
         return
@@ -248,6 +390,19 @@ async def record_api_key_usage(
         }
         if status_code >= 400:
             update["error_count"] = firestore.Increment(1)
+        if token_usage:
+            prompt_tokens = int(token_usage.get("prompt_tokens") or 0)
+            completion_tokens = int(token_usage.get("completion_tokens") or 0)
+            total_tokens = int(token_usage.get("total_tokens") or 0)
+            if prompt_tokens:
+                update["total_prompt_tokens"] = firestore.Increment(prompt_tokens)
+                update["last_prompt_tokens"] = prompt_tokens
+            if completion_tokens:
+                update["total_completion_tokens"] = firestore.Increment(completion_tokens)
+                update["last_completion_tokens"] = completion_tokens
+            if total_tokens:
+                update["total_tokens"] = firestore.Increment(total_tokens)
+                update["last_total_tokens"] = total_tokens
         doc_ref.set(update, merge=True)
     except Exception as e:
         logger.warning(f"Failed to record usage for API key: {e}")
