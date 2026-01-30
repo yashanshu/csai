@@ -10,7 +10,6 @@ if [ -z "$PROJECT_ID" ]; then
 fi
 RunRegion="asia-southeast1"
 QwenServiceName="vllm-qwen3-14b"
-GptOssServiceName="vllm-gpt-oss-20b"
 GatewayServiceName="vllm-gateway"
 ImageName="gcr.io/$PROJECT_ID/vllm-openai"
 ModelBucket="${MODEL_BUCKET:-$PROJECT_ID-vllm-models}"
@@ -18,7 +17,6 @@ ModelBucket="${MODEL_BUCKET:-$PROJECT_ID-vllm-models}"
 # Confirmation
 echo -e "\033[0;31mWARNING: This will PERMANENTLY DELETE the following:\033[0m"
 echo "  - Cloud Run Service: $QwenServiceName (Region: $RunRegion)"
-echo "  - Cloud Run Service: $GptOssServiceName (Region: $RunRegion)"
 echo "  - Cloud Run Service: $GatewayServiceName (Region: $RunRegion)"
 echo "  - Container Image:   $ImageName"
 echo "  - Model Cache Bucket: gs://$ModelBucket"
@@ -33,7 +31,6 @@ fi
 
 echo -e "\033[0;36m1. Deleting Cloud Run Service...\033[0m"
 gcloud run services delete "$QwenServiceName" --region "$RunRegion" --quiet
-gcloud run services delete "$GptOssServiceName" --region "$RunRegion" --quiet
 gcloud run services delete "$GatewayServiceName" --region "$RunRegion" --quiet
 
 if [ $? -eq 0 ]; then

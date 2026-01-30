@@ -24,6 +24,7 @@ import {
   DEFAULT_PROMPT,
   MODEL_OPTIONS,
   PUBLIC_API_KEY,
+  QWEN_SERVICE_URL,
   SETTINGS_STORAGE_KEY,
   THEME_STORAGE_KEY,
   VIEW_STORAGE_KEY,
@@ -726,6 +727,7 @@ export default function App() {
             adminHealth={adminHealth}
             adminSection={adminSection}
             setAdminSection={setAdminSection}
+            qwenServiceUrl={QWEN_SERVICE_URL}
             handleGenerate={handleGenerate}
             handleStop={handleStop}
             handleClear={handleClear}

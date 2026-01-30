@@ -9,7 +9,6 @@ if (-not $PROJECT_ID) {
 }
 $RunRegion = "asia-southeast1"
 $QwenServiceName = "vllm-qwen3-14b"
-$GptOssServiceName = "vllm-gpt-oss-20b"
 $GatewayServiceName = "vllm-gateway"
 $ImageName = "gcr.io/$PROJECT_ID/vllm-openai"
 $ModelBucket = if ($env:MODEL_BUCKET) { $env:MODEL_BUCKET } else { "$PROJECT_ID-vllm-models" }
@@ -17,7 +16,6 @@ $ModelBucket = if ($env:MODEL_BUCKET) { $env:MODEL_BUCKET } else { "$PROJECT_ID-
 # Confirmation
 Write-Host "WARNING: This will PERMANENTLY DELETE the following:" -ForegroundColor Red
 Write-Host "  - Cloud Run Service: $QwenServiceName (Region: $RunRegion)"
-Write-Host "  - Cloud Run Service: $GptOssServiceName (Region: $RunRegion)"
 Write-Host "  - Cloud Run Service: $GatewayServiceName (Region: $RunRegion)"
 Write-Host "  - Container Image:   $ImageName"
 Write-Host "  - Model Cache Bucket: gs://$ModelBucket"
@@ -32,7 +30,6 @@ if ($confirm -notin @("y", "Y")) {
 
 Write-Host "1. Deleting Cloud Run Service..." -ForegroundColor Cyan
 & gcloud run services delete "$QwenServiceName" --region "$RunRegion" --quiet
-& gcloud run services delete "$GptOssServiceName" --region "$RunRegion" --quiet
 & gcloud run services delete "$GatewayServiceName" --region "$RunRegion" --quiet
 
 if ($LASTEXITCODE -eq 0) {

@@ -21,6 +21,8 @@ if ! (touch "$HF_HOME/.write-test" 2>/dev/null && rm -f "$HF_HOME/.write-test" 2
   echo "Warning: model cache is not writable at $HF_HOME"
 fi
 
+: "${PREFETCH_BLOCKING:=0}"
+
 prefetch_model() {
   if [ -z "$VLLM_MODEL" ]; then
     echo "No VLLM_MODEL set; skipping prefetch."
@@ -78,7 +80,11 @@ PY
 }
 
 if [ -z "$VLLM_DISABLE_LOCAL" ]; then
-  prefetch_model
+  if [ "$PREFETCH_BLOCKING" = "1" ]; then
+    prefetch_model
+  else
+    prefetch_model &
+  fi
   python3 -m vllm.entrypoints.openai.api_server \
     --model "$VLLM_MODEL" \
     --host "$VLLM_HOST" \
