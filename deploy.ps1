@@ -92,7 +92,15 @@ $VLLM_PORT = if ($env:VLLM_PORT) { $env:VLLM_PORT } else { "8000" }
 $VLLM_ARGS = if ($env:VLLM_ARGS) { $env:VLLM_ARGS } else { "" }
 $QWEN_MODEL = if ($env:QWEN_MODEL) { $env:QWEN_MODEL } else { "Qwen/Qwen3-14B" }
 $GPT_OSS_MODEL = if ($env:GPT_OSS_MODEL) { $env:GPT_OSS_MODEL } else { "openai/gpt-oss-20b" }
-$VLLM_ARGS_QWEN = if ($env:VLLM_ARGS_QWEN) { $env:VLLM_ARGS_QWEN } else { $VLLM_ARGS }
+# Qwen3-14B memory profiles (adjust as needed):
+# Balanced (default): 4k ctx, moderate concurrency
+#   --max-model-len 4096 --max-num-seqs 12 --max-num-batched-tokens 4096
+# Long ctx / low concurrency:
+#   --max-model-len 8192 --max-num-seqs 6 --max-num-batched-tokens 2048
+# Higher concurrency / short ctx:
+#   --max-model-len 2048 --max-num-seqs 24 --max-num-batched-tokens 4096
+$VLLM_ARGS_QWEN_DEFAULT = "--quantization bitsandbytes --gpu-memory-utilization 0.88 --max-model-len 4096 --max-num-seqs 12 --max-num-batched-tokens 4096 --swap-space 8"
+$VLLM_ARGS_QWEN = if ($env:VLLM_ARGS_QWEN) { $env:VLLM_ARGS_QWEN } elseif ($env:VLLM_ARGS) { $env:VLLM_ARGS } else { $VLLM_ARGS_QWEN_DEFAULT }
 $VLLM_ARGS_GPT = if ($env:VLLM_ARGS_GPT) { $env:VLLM_ARGS_GPT } else { $VLLM_ARGS }
 $VLLM_ROUTING_STRATEGY = if ($env:VLLM_ROUTING_STRATEGY) { $env:VLLM_ROUTING_STRATEGY } else { "round_robin" }
 

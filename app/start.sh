@@ -6,6 +6,8 @@
 : "${VLLM_PORT:=8000}"
 : "${VLLM_ARGS:=}"
 : "${VLLM_DISABLE_LOCAL:=}"
+: "${PYTORCH_CUDA_ALLOC_CONF:=expandable_segments:True}"
+export PYTORCH_CUDA_ALLOC_CONF
 
 # Persistent model cache (mounted volume recommended).
 : "${MODEL_CACHE_DIR:=/mnt/models}"

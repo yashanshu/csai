@@ -82,7 +82,15 @@ VLLM_PORT=${VLLM_PORT:-8000}
 VLLM_ARGS=${VLLM_ARGS:-}
 QWEN_MODEL=${QWEN_MODEL:-"Qwen/Qwen3-14B"}
 GPT_OSS_MODEL=${GPT_OSS_MODEL:-"openai/gpt-oss-20b"}
-VLLM_ARGS_QWEN=${VLLM_ARGS_QWEN:-$VLLM_ARGS}
+# Qwen3-14B memory profiles (adjust as needed):
+# Balanced (default): 4k ctx, moderate concurrency
+#   --max-model-len 4096 --max-num-seqs 12 --max-num-batched-tokens 4096
+# Long ctx / low concurrency:
+#   --max-model-len 8192 --max-num-seqs 6 --max-num-batched-tokens 2048
+# Higher concurrency / short ctx:
+#   --max-model-len 2048 --max-num-seqs 24 --max-num-batched-tokens 4096
+VLLM_ARGS_QWEN_DEFAULT="--quantization bitsandbytes --gpu-memory-utilization 0.88 --max-model-len 4096 --max-num-seqs 12 --max-num-batched-tokens 4096 --swap-space 8"
+VLLM_ARGS_QWEN=${VLLM_ARGS_QWEN:-${VLLM_ARGS:-$VLLM_ARGS_QWEN_DEFAULT}}
 VLLM_ARGS_GPT=${VLLM_ARGS_GPT:-$VLLM_ARGS}
 VLLM_ROUTING_STRATEGY=${VLLM_ROUTING_STRATEGY:-"round_robin"}
 
