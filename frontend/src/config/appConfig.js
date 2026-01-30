@@ -54,12 +54,13 @@ export const DEFAULT_API_BASE =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 export const PUBLIC_API_KEY = import.meta.env.VITE_PUBLIC_API_KEY || "";
 export const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "";
+export const QWEN_SERVICE_URL = import.meta.env.VITE_QWEN_SERVICE_URL || "";
 export const DEFAULT_PROMPT = "One sentence please.";
 export const DEFAULT_MODEL = "Qwen/Qwen3-14B";
 export const SETTINGS_STORAGE_KEY = "ollama-relay-settings";
 export const VIEW_STORAGE_KEY = "ollama-relay-view";
 export const THEME_STORAGE_KEY = "ollama-relay-theme";
-export const MODEL_OPTIONS = ["Qwen/Qwen3-14B", "openai/gpt-oss-20b"];
+export const MODEL_OPTIONS = ["Qwen/Qwen3-14B"];
 export const FIREBASE_FIELDS = [
   { key: "apiKey", label: "API Key" },
   { key: "authDomain", label: "Auth Domain" },

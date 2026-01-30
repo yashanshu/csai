@@ -23,6 +23,10 @@ $GptOssServiceName = "vllm-gpt-oss-20b"
 $GatewayServiceName = "vllm-gateway"
 $ModelBucket = if ($env:MODEL_BUCKET) { $env:MODEL_BUCKET } else { "$PROJECT_ID-vllm-models" }
 $ModelMountPath = if ($env:MODEL_MOUNT_PATH) { $env:MODEL_MOUNT_PATH } else { "/mnt/models" }
+$QWEN_CPU = if ($env:QWEN_CPU) { $env:QWEN_CPU } else { "8" }
+$QWEN_MEMORY = if ($env:QWEN_MEMORY) { $env:QWEN_MEMORY } else { "32Gi" }
+$GATEWAY_CPU = if ($env:GATEWAY_CPU) { $env:GATEWAY_CPU } else { "1" }
+$GATEWAY_MEMORY = if ($env:GATEWAY_MEMORY) { $env:GATEWAY_MEMORY } else { "512Mi" }
 
 # Enable Storage API (required for Cloud Build staging bucket).
 Write-Host "Enabling Storage API..."
@@ -108,8 +112,8 @@ Write-Host "2. Deploying Qwen3-14B service..." -ForegroundColor Cyan
   --allow-unauthenticated `
   --execution-environment gen2 `
   --no-cpu-throttling `
-  --cpu 8 `
-  --memory 32Gi `
+  --cpu $QWEN_CPU `
+  --memory $QWEN_MEMORY `
   --gpu 1 `
   --gpu-type nvidia-l4 `
   --no-gpu-zonal-redundancy `
@@ -120,49 +124,53 @@ Write-Host "2. Deploying Qwen3-14B service..." -ForegroundColor Cyan
   --add-volume-mount "volume=model-cache,mount-path=$ModelMountPath" `
   --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET,DEFAULT_RATE_LIMIT_PER_MINUTE=$DEFAULT_RATE_LIMIT_PER_MINUTE,DEFAULT_QUOTA_PER_DAY=$DEFAULT_QUOTA_PER_DAY,MAX_BODY_BYTES=$MAX_BODY_BYTES,MODELS_CACHE_TTL_SECONDS=$MODELS_CACHE_TTL_SECONDS,IMAGE_API_URL=$IMAGE_API_URL,IMAGE_API_KEY=$IMAGE_API_KEY,IMAGE_API_KEY_HEADER=$IMAGE_API_KEY_HEADER,IMAGE_API_KEY_PREFIX=$IMAGE_API_KEY_PREFIX,IMAGE_TIMEOUT_SECONDS=$IMAGE_TIMEOUT_SECONDS,MODEL_CACHE_DIR=$ModelMountPath,VLLM_MODEL=$QWEN_MODEL,VLLM_HOST=$VLLM_HOST,VLLM_PORT=$VLLM_PORT,VLLM_ARGS=$VLLM_ARGS_QWEN"
 
-Write-Host "3. Deploying GPT OSS 20B service..." -ForegroundColor Cyan
-& gcloud run deploy "$GptOssServiceName" `
-  --image "$ImageName" `
-  --region "asia-southeast1" `
-  --platform managed `
-  --allow-unauthenticated `
-  --execution-environment gen2 `
-  --no-cpu-throttling `
-  --cpu 8 `
-  --memory 32Gi `
-  --gpu 1 `
-  --gpu-type nvidia-l4 `
-  --no-gpu-zonal-redundancy `
-  --max-instances 1 `
-  --concurrency 100 `
-  --timeout 3600 `
-  --add-volume "name=model-cache,type=cloud-storage,bucket=$ModelBucket" `
-  --add-volume-mount "volume=model-cache,mount-path=$ModelMountPath" `
-  --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET,DEFAULT_RATE_LIMIT_PER_MINUTE=$DEFAULT_RATE_LIMIT_PER_MINUTE,DEFAULT_QUOTA_PER_DAY=$DEFAULT_QUOTA_PER_DAY,MAX_BODY_BYTES=$MAX_BODY_BYTES,MODELS_CACHE_TTL_SECONDS=$MODELS_CACHE_TTL_SECONDS,IMAGE_API_URL=$IMAGE_API_URL,IMAGE_API_KEY=$IMAGE_API_KEY,IMAGE_API_KEY_HEADER=$IMAGE_API_KEY_HEADER,IMAGE_API_KEY_PREFIX=$IMAGE_API_KEY_PREFIX,IMAGE_TIMEOUT_SECONDS=$IMAGE_TIMEOUT_SECONDS,MODEL_CACHE_DIR=$ModelMountPath,VLLM_MODEL=$GPT_OSS_MODEL,VLLM_HOST=$VLLM_HOST,VLLM_PORT=$VLLM_PORT,VLLM_ARGS=$VLLM_ARGS_GPT"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Qwen deploy failed; skipping URL lookup."
+    $QWEN_URL = ""
+} else {
+    $QWEN_URL = & gcloud run services describe "$QwenServiceName" --region="$RunRegion" --format="value(status.url)"
+}
 
-$QWEN_URL = & gcloud run services describe "$QwenServiceName" --region="$RunRegion" --format="value(status.url)"
-$GPT_URL = & gcloud run services describe "$GptOssServiceName" --region="$RunRegion" --format="value(status.url)"
-$VLLM_MODEL_ROUTE_MAP = "$($QWEN_MODEL.ToLower())=$QWEN_URL,$($GPT_OSS_MODEL.ToLower())=$GPT_URL"
-$VLLM_UPSTREAMS = "$QWEN_URL,$GPT_URL"
+$Upstreams = @()
+$RouteMapPairs = @()
+if ($QWEN_URL) {
+    $Upstreams += $QWEN_URL
+    $RouteMapPairs += "$($QWEN_MODEL.ToLower())=$QWEN_URL"
+}
+
+if ($Upstreams.Count -gt 0) {
+    $VLLM_MODEL_ROUTE_MAP = $RouteMapPairs -join ","
+    $VLLM_UPSTREAMS = $Upstreams -join ","
+} else {
+    $VLLM_MODEL_ROUTE_MAP = ""
+    $VLLM_UPSTREAMS = ""
+}
 
 Write-Host "4. Deploying gateway service..." -ForegroundColor Cyan
-& gcloud run deploy "$GatewayServiceName" `
-  --image "$ImageName" `
-  --region "asia-southeast1" `
-  --platform managed `
-  --allow-unauthenticated `
-  --execution-environment gen2 `
-  --no-cpu-throttling `
-  --cpu 2 `
-  --memory 4Gi `
-  --max-instances 2 `
-  --concurrency 200 `
-  --timeout 3600 `
-  --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET,DEFAULT_RATE_LIMIT_PER_MINUTE=$DEFAULT_RATE_LIMIT_PER_MINUTE,DEFAULT_QUOTA_PER_DAY=$DEFAULT_QUOTA_PER_DAY,MAX_BODY_BYTES=$MAX_BODY_BYTES,MODELS_CACHE_TTL_SECONDS=$MODELS_CACHE_TTL_SECONDS,IMAGE_API_URL=$IMAGE_API_URL,IMAGE_API_KEY=$IMAGE_API_KEY,IMAGE_API_KEY_HEADER=$IMAGE_API_KEY_HEADER,IMAGE_API_KEY_PREFIX=$IMAGE_API_KEY_PREFIX,IMAGE_TIMEOUT_SECONDS=$IMAGE_TIMEOUT_SECONDS,VLLM_DISABLE_LOCAL=1,VLLM_UPSTREAMS=$VLLM_UPSTREAMS,VLLM_MODEL_ROUTE_MAP=$VLLM_MODEL_ROUTE_MAP,VLLM_ROUTING_STRATEGY=$VLLM_ROUTING_STRATEGY"
+if (-not $VLLM_UPSTREAMS) {
+    Write-Host "No upstream services available. Skipping gateway deploy."
+} else {
+    & gcloud run deploy "$GatewayServiceName" `
+      --image "$ImageName" `
+      --region "asia-southeast1" `
+      --platform managed `
+      --allow-unauthenticated `
+      --execution-environment gen2 `
+      --no-cpu-throttling `
+      --cpu $GATEWAY_CPU `
+      --memory $GATEWAY_MEMORY `
+      --max-instances 2 `
+      --concurrency 200 `
+      --timeout 3600 `
+      --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET,DEFAULT_RATE_LIMIT_PER_MINUTE=$DEFAULT_RATE_LIMIT_PER_MINUTE,DEFAULT_QUOTA_PER_DAY=$DEFAULT_QUOTA_PER_DAY,MAX_BODY_BYTES=$MAX_BODY_BYTES,MODELS_CACHE_TTL_SECONDS=$MODELS_CACHE_TTL_SECONDS,IMAGE_API_URL=$IMAGE_API_URL,IMAGE_API_KEY=$IMAGE_API_KEY,IMAGE_API_KEY_HEADER=$IMAGE_API_KEY_HEADER,IMAGE_API_KEY_PREFIX=$IMAGE_API_KEY_PREFIX,IMAGE_TIMEOUT_SECONDS=$IMAGE_TIMEOUT_SECONDS,VLLM_DISABLE_LOCAL=1,VLLM_UPSTREAMS=$VLLM_UPSTREAMS,VLLM_MODEL_ROUTE_MAP=$VLLM_MODEL_ROUTE_MAP,VLLM_ROUTING_STRATEGY=$VLLM_ROUTING_STRATEGY"
+}
 
 Write-Host "Deployment complete!" -ForegroundColor Green
 Write-Host "Admin Secret: $ADMIN_SECRET" -ForegroundColor Yellow
 Write-Host "Qwen3-14B URL: $QWEN_URL"
-Write-Host "GPT OSS 20B URL: $GPT_URL"
-$gatewayUrl = & gcloud run services describe "$GatewayServiceName" --region="$RunRegion" --format="value(status.url)"
-Write-Host "Gateway URL: $gatewayUrl"
+if ($VLLM_UPSTREAMS) {
+    $gatewayUrl = & gcloud run services describe "$GatewayServiceName" --region="$RunRegion" --format="value(status.url)"
+    Write-Host "Gateway URL: $gatewayUrl"
+} else {
+    Write-Host "Gateway URL: (not deployed)"
+}

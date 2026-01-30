@@ -23,6 +23,10 @@ GptOssServiceName="vllm-gpt-oss-20b"
 GatewayServiceName="vllm-gateway"
 ModelBucket="${MODEL_BUCKET:-$PROJECT_ID-vllm-models}"
 ModelMountPath="${MODEL_MOUNT_PATH:-/mnt/models}"
+QWEN_CPU="${QWEN_CPU:-8}"
+QWEN_MEMORY="${QWEN_MEMORY:-32Gi}"
+GATEWAY_CPU="${GATEWAY_CPU:-1}"
+GATEWAY_MEMORY="${GATEWAY_MEMORY:-512Mi}"
 
 # Enable Storage API (required for Cloud Build staging bucket).
 echo "Enabling Storage API..."
@@ -98,8 +102,8 @@ gcloud run deploy "$QwenServiceName" \
   --allow-unauthenticated \
   --execution-environment gen2 \
   --no-cpu-throttling \
-  --cpu 8 \
-  --memory 32Gi \
+  --cpu "$QWEN_CPU" \
+  --memory "$QWEN_MEMORY" \
   --gpu 1 \
   --gpu-type nvidia-l4 \
   --no-gpu-zonal-redundancy \
@@ -110,48 +114,44 @@ gcloud run deploy "$QwenServiceName" \
   --add-volume-mount "volume=model-cache,mount-path=$ModelMountPath" \
   --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET,DEFAULT_RATE_LIMIT_PER_MINUTE=$DEFAULT_RATE_LIMIT_PER_MINUTE,DEFAULT_QUOTA_PER_DAY=$DEFAULT_QUOTA_PER_DAY,MAX_BODY_BYTES=$MAX_BODY_BYTES,MODELS_CACHE_TTL_SECONDS=$MODELS_CACHE_TTL_SECONDS,IMAGE_API_URL=$IMAGE_API_URL,IMAGE_API_KEY=$IMAGE_API_KEY,IMAGE_API_KEY_HEADER=$IMAGE_API_KEY_HEADER,IMAGE_API_KEY_PREFIX=$IMAGE_API_KEY_PREFIX,IMAGE_TIMEOUT_SECONDS=$IMAGE_TIMEOUT_SECONDS,MODEL_CACHE_DIR=$ModelMountPath,VLLM_MODEL=$QWEN_MODEL,VLLM_HOST=$VLLM_HOST,VLLM_PORT=$VLLM_PORT,VLLM_ARGS=$VLLM_ARGS_QWEN"
 
-echo -e "\033[0;36m3. Deploying GPT OSS 20B service...\033[0m"
-gcloud run deploy "$GptOssServiceName" \
-  --image "$ImageName" \
-  --region "$RunRegion" \
-  --platform managed \
-  --allow-unauthenticated \
-  --execution-environment gen2 \
-  --no-cpu-throttling \
-  --cpu 8 \
-  --memory 32Gi \
-  --gpu 1 \
-  --gpu-type nvidia-l4 \
-  --no-gpu-zonal-redundancy \
-  --max-instances 1 \
-  --concurrency 100 \
-  --timeout 3600 \
-  --add-volume "name=model-cache,type=cloud-storage,bucket=$ModelBucket" \
-  --add-volume-mount "volume=model-cache,mount-path=$ModelMountPath" \
-  --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET,DEFAULT_RATE_LIMIT_PER_MINUTE=$DEFAULT_RATE_LIMIT_PER_MINUTE,DEFAULT_QUOTA_PER_DAY=$DEFAULT_QUOTA_PER_DAY,MAX_BODY_BYTES=$MAX_BODY_BYTES,MODELS_CACHE_TTL_SECONDS=$MODELS_CACHE_TTL_SECONDS,IMAGE_API_URL=$IMAGE_API_URL,IMAGE_API_KEY=$IMAGE_API_KEY,IMAGE_API_KEY_HEADER=$IMAGE_API_KEY_HEADER,IMAGE_API_KEY_PREFIX=$IMAGE_API_KEY_PREFIX,IMAGE_TIMEOUT_SECONDS=$IMAGE_TIMEOUT_SECONDS,MODEL_CACHE_DIR=$ModelMountPath,VLLM_MODEL=$GPT_OSS_MODEL,VLLM_HOST=$VLLM_HOST,VLLM_PORT=$VLLM_PORT,VLLM_ARGS=$VLLM_ARGS_GPT"
-
-QWEN_URL=$(gcloud run services describe "$QwenServiceName" --region="$RunRegion" --format='value(status.url)')
-GPT_URL=$(gcloud run services describe "$GptOssServiceName" --region="$RunRegion" --format='value(status.url)')
+if [ $? -ne 0 ]; then
+    echo "Qwen deploy failed; skipping URL lookup."
+    QWEN_URL=""
+else
+    QWEN_URL=$(gcloud run services describe "$QwenServiceName" --region="$RunRegion" --format='value(status.url)')
+fi
 
 echo -e "\033[0;36m4. Deploying gateway service...\033[0m"
-VLLM_MODEL_ROUTE_MAP="${QWEN_MODEL,,}=$QWEN_URL,${GPT_OSS_MODEL,,}=$GPT_URL"
-VLLM_UPSTREAMS="$QWEN_URL,$GPT_URL"
-gcloud run deploy "$GatewayServiceName" \
-  --image "$ImageName" \
-  --region "$RunRegion" \
-  --platform managed \
-  --allow-unauthenticated \
-  --execution-environment gen2 \
-  --no-cpu-throttling \
-  --cpu 2 \
-  --memory 4Gi \
-  --max-instances 2 \
-  --concurrency 200 \
-  --timeout 3600 \
-  --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET,DEFAULT_RATE_LIMIT_PER_MINUTE=$DEFAULT_RATE_LIMIT_PER_MINUTE,DEFAULT_QUOTA_PER_DAY=$DEFAULT_QUOTA_PER_DAY,MAX_BODY_BYTES=$MAX_BODY_BYTES,MODELS_CACHE_TTL_SECONDS=$MODELS_CACHE_TTL_SECONDS,IMAGE_API_URL=$IMAGE_API_URL,IMAGE_API_KEY=$IMAGE_API_KEY,IMAGE_API_KEY_HEADER=$IMAGE_API_KEY_HEADER,IMAGE_API_KEY_PREFIX=$IMAGE_API_KEY_PREFIX,IMAGE_TIMEOUT_SECONDS=$IMAGE_TIMEOUT_SECONDS,VLLM_DISABLE_LOCAL=1,VLLM_UPSTREAMS=$VLLM_UPSTREAMS,VLLM_MODEL_ROUTE_MAP=$VLLM_MODEL_ROUTE_MAP,VLLM_ROUTING_STRATEGY=$VLLM_ROUTING_STRATEGY"
+VLLM_UPSTREAMS=""
+VLLM_MODEL_ROUTE_MAP=""
+if [ -n "$QWEN_URL" ]; then
+    VLLM_UPSTREAMS="$QWEN_URL"
+    VLLM_MODEL_ROUTE_MAP="${QWEN_MODEL,,}=$QWEN_URL"
+fi
+
+if [ -z "$VLLM_UPSTREAMS" ]; then
+    echo "No upstream services available. Skipping gateway deploy."
+else
+    gcloud run deploy "$GatewayServiceName" \
+      --image "$ImageName" \
+      --region "$RunRegion" \
+      --platform managed \
+      --allow-unauthenticated \
+      --execution-environment gen2 \
+      --no-cpu-throttling \
+      --cpu "$GATEWAY_CPU" \
+      --memory "$GATEWAY_MEMORY" \
+      --max-instances 2 \
+      --concurrency 200 \
+      --timeout 3600 \
+      --set-env-vars "ADMIN_SECRET=$ADMIN_SECRET,DEFAULT_RATE_LIMIT_PER_MINUTE=$DEFAULT_RATE_LIMIT_PER_MINUTE,DEFAULT_QUOTA_PER_DAY=$DEFAULT_QUOTA_PER_DAY,MAX_BODY_BYTES=$MAX_BODY_BYTES,MODELS_CACHE_TTL_SECONDS=$MODELS_CACHE_TTL_SECONDS,IMAGE_API_URL=$IMAGE_API_URL,IMAGE_API_KEY=$IMAGE_API_KEY,IMAGE_API_KEY_HEADER=$IMAGE_API_KEY_HEADER,IMAGE_API_KEY_PREFIX=$IMAGE_API_KEY_PREFIX,IMAGE_TIMEOUT_SECONDS=$IMAGE_TIMEOUT_SECONDS,VLLM_DISABLE_LOCAL=1,VLLM_UPSTREAMS=$VLLM_UPSTREAMS,VLLM_MODEL_ROUTE_MAP=$VLLM_MODEL_ROUTE_MAP,VLLM_ROUTING_STRATEGY=$VLLM_ROUTING_STRATEGY"
+fi
 
 echo -e "\033[0;32mDeployment complete!\033[0m"
 echo -e "\033[0;33mAdmin Secret: $ADMIN_SECRET\033[0m"
 echo "Qwen3-14B URL: $QWEN_URL"
-echo "GPT OSS 20B URL: $GPT_URL"
-echo "Gateway URL: $(gcloud run services describe $GatewayServiceName --region=$RunRegion --format='value(status.url)')"
+if [ -n "$VLLM_UPSTREAMS" ]; then
+    echo "Gateway URL: $(gcloud run services describe $GatewayServiceName --region=$RunRegion --format='value(status.url)')"
+else
+    echo "Gateway URL: (not deployed)"
+fi

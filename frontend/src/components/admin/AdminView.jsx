@@ -45,6 +45,7 @@ const AdminView = ({
   adminHealth,
   adminSection,
   setAdminSection,
+  qwenServiceUrl,
   handleGenerate,
   handleStop,
   handleClear,
@@ -685,6 +686,19 @@ const AdminView = ({
                   className="input input-bordered bg-base-100"
                 />
               </label>
+              {qwenServiceUrl ? (
+                <label className="form-control w-full">
+                  <div className="label">
+                    <span className="label-text">Qwen Service URL</span>
+                  </div>
+                  <input
+                    type="url"
+                    value={qwenServiceUrl}
+                    readOnly
+                    className="input input-bordered bg-base-100 text-base-content/70"
+                  />
+                </label>
+              ) : null}
               <label className="form-control w-full">
                 <div className="label">
                   <span className="label-text">API Key</span>
